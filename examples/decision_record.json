@@ -1,0 +1,55 @@
+{
+  "id": "decision_artist_4Z8W4fKeB5YxbusRsdQVPb_20251104",
+  "timestamp": "2025-11-04T14:30:23.050Z",
+  "input": {
+    "artist_id": "4Z8W4fKeB5YxbusRsdQVPb",
+    "artist_name": "Example Artist",
+    "track_name": "Example Song Title",
+    "sources_queried": ["wikidata", "musicbrainz", "lastfm"]
+  },
+  "classification": {
+    "label": "virtual_idol",
+    "is_artificial": true,
+    "confidence": 0.95,
+    "sources_agreeing": 3,
+    "min_required": 2,
+    "band_policy_applied": false
+  },
+  "sources": {
+    "wikidata": {
+      "success": true,
+      "result": "virtual_idol",
+      "signals": ["Q24236999"],
+      "entity_id": "Q552682",
+      "url": "https://www.wikidata.org/wiki/Q552682",
+      "query_time_ms": 234
+    },
+    "musicbrainz": {
+      "success": true,
+      "result": "vocaloid",
+      "mbid": "abc123-def456-789",
+      "tags": ["vocaloid", "virtual", "japanese"],
+      "url": "https://musicbrainz.org/artist/abc123-def456-789",
+      "query_time_ms": 456
+    },
+    "lastfm": {
+      "success": true,
+      "result": "virtual",
+      "tags": [
+        {"name": "vocaloid", "count": 1234},
+        {"name": "virtual idol", "count": 567},
+        {"name": "japanese", "count": 890}
+      ],
+      "url": "https://www.last.fm/music/Example+Artist",
+      "query_time_ms": 123
+    }
+  },
+  "llm_fallback": {
+    "used": false,
+    "model": null,
+    "output": null
+  },
+  "decision_reason": "Artist classified as artificial: 3/3 sources agree (wikidata: virtual_idol, musicbrainz: vocaloid, lastfm: virtual). Threshold: 2 sources required.",
+  "cached_until": "2025-11-05T14:30:23.050Z",
+  "override": null
+}

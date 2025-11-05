@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique reverse-DNS identifier for this agent -->
+    <key>Label</key>
+    <string>com.spotify-stop-ai.guard</string>
+    
+    <!-- Command to execute: Python interpreter and script path -->
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Replace with your Python interpreter path (run: which python3) -->
+        <string>/usr/local/bin/python3</string>
+        <string>-m</string>
+        <string>spotify_stop_ai.main</string>
+    </array>
+    
+    <!-- Working directory: path to your spotify-stop-ai project -->
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/src/spotify-stop-ai</string>
+    
+    <!-- Run at login -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- Keep alive (restart if crashed) -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Only keep alive if network is available -->
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+    
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Add your credentials here or source from .env -->
+        <key>SPOTIFY_CLIENT_ID</key>
+        <string>your_spotify_client_id_here</string>
+        
+        <key>LASTFM_API_KEY</key>
+        <string>your_lastfm_api_key_here</string>
+        
+        <key>OLLAMA_HOST</key>
+        <string>http://127.0.0.1:11434</string>
+        
+        <!-- Python path (if using virtual environment) -->
+        <key>PYTHONPATH</key>
+        <string>/Users/YOUR_USERNAME/src/spotify-stop-ai/src</string>
+    </dict>
+    
+    <!-- Log output -->
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/spotify-stop-ai.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/spotify-stop-ai-error.log</string>
+    
+    <!-- Throttle restart attempts (prevent rapid respawn) -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

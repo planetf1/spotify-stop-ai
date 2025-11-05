@@ -1,0 +1,133 @@
+# Spotify Stop AI - Configuration Example
+# Copy this file to config.yaml and adjust settings as needed
+
+# Spotify API settings
+spotify:
+  # OAuth PKCE settings - configure these after creating your Spotify app
+  # at https://developer.spotify.com/dashboard
+  client_id: "${SPOTIFY_CLIENT_ID}"
+  redirect_uri: "http://127.0.0.1:8888/callback"
+  # Cache file for tokens (will be created automatically)
+  cache_path: ".cache-spotify"
+
+# Playback monitoring
+monitor:
+  # Polling interval in seconds (minimum 1, recommended 2-3)
+  poll_interval_seconds: 2
+  # Backoff multiplier when rate limited (429)
+  rate_limit_backoff_multiplier: 2.0
+  # Maximum backoff interval in seconds
+  max_backoff_seconds: 60
+
+# Classification settings
+classification:
+  # Minimum number of sources that must agree to classify as artificial
+  # Valid values: 1, 2, 3 (recommended: 2)
+  min_source_agreement: 2
+  
+  # Band policy: treat any virtual/fictional member as artificial
+  # If true, bands with any virtual/fictional signals are classified as artificial
+  # If false, require explicit "virtual band" classification
+  band_policy:
+    virtual_or_fictional_is_artificial: true
+  
+  # Cache duration for artist verdicts (seconds)
+  cache_duration_seconds: 86400  # 24 hours
+  
+  # Keywords/tags to search for in each source (case-insensitive)
+  ai_keywords:
+    - "vocaloid"
+    - "vtuber"
+    - "virtual idol"
+    - "virtual singer"
+    - "virtual band"
+    - "fictional"
+    - "ai generated"
+    - "voice synthesis"
+    - "synthesized voice"
+
+# Data sources for classification
+sources:
+  wikidata:
+    enabled: true
+    timeout_seconds: 10
+  
+  musicbrainz:
+    enabled: true
+    # User agent for MusicBrainz API (required, please customize)
+    user_agent: "spotify-stop-ai/0.1.0 (your.email@example.com)"
+    timeout_seconds: 10
+    # Rate limit: 1 request per second (enforced by client)
+    rate_limit_per_second: 1
+  
+  lastfm:
+    enabled: true
+    # API key from https://www.last.fm/api/account/create
+    api_key: "${LASTFM_API_KEY}"
+    timeout_seconds: 10
+    # Minimum tag count to consider (filters noise)
+    min_tag_count: 5
+
+# Optional: Local LLM fallback via Ollama
+ollama:
+  # Enable LLM fallback for inconclusive cases
+  enabled: false
+  # Ollama API endpoint
+  host: "http://127.0.0.1:11434"
+  # Model to use (granite4:tiny-h, granite4:350m-h, llama3.2:1b, etc.)
+  model: "granite4:tiny-h"
+  # Keep model loaded for this duration
+  keep_alive: "5m"
+  # Model options
+  options:
+    temperature: 0.0
+    seed: 42
+    num_predict: 128
+  # Request timeout in milliseconds
+  timeout_ms: 8000
+  # Max concurrent requests (recommended: 1 for small models)
+  max_concurrent: 1
+  # Require citations from provided sources
+  require_citations: true
+
+# Actions to take when artificial artist detected
+actions:
+  # Auto-skip to next track (recommended: true)
+  auto_skip: true
+  
+  # Remove from user-owned playlists when context is a user playlist
+  # (default: false, only skip; enable to mutate playlists)
+  remove_from_user_playlists: false
+  
+  # Add blocked tracks to a private playlist for review
+  # Leave empty to disable
+  add_to_blocked_playlist: ""
+  # Example: "AI-Blocked Tracks"
+
+# Database settings
+database:
+  # SQLite database path
+  path: "data/spotify-stop-ai.db"
+
+# Review API/UI settings
+api:
+  # Enable local review API
+  enabled: true
+  # Host to bind to (localhost for local only)
+  host: "127.0.0.1"
+  # Port for review API
+  port: 8889
+
+# Web UI settings
+web_ui:
+  # Enable web UI
+  enabled: true
+  # Port for web UI (API must be enabled)
+  port: 8890
+
+# Logging
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  # Log file path (leave empty for stdout only)
+  file: ""

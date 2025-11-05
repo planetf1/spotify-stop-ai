@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Spotify Stop AI{% endblock %}
+
+{% block content %}
+<div id="current-playback">
+    {% if current_track %}
+    <div class="current-playback">
+        <h2>🎵 Now Playing</h2>
+        <div class="track-info">
+            <strong>{{ current_track.track_name }}</strong> by <strong>{{ current_track.artist_name }}</strong>
+        </div>
+        <div class="timestamp">Started: {{ current_track.timestamp }}</div>
+        {% if current_track.artist_id %}
+        <div style="margin-top: 1rem;">
+            <a href="/artist/{{ current_track.artist_id }}" class="btn">View Artist Details</a>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="card">
+        <h2>🎵 Now Playing</h2>
+        <p style="color: #b3b3b3;">No track currently playing</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h2>📊 Recent Plays</h2>
+        {% if plays %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Artist</th>
+                    <th>Track</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in plays[:5] %}
+                <tr>
+                    <td>
+                        <a href="/artist/{{ play.artist_id }}">{{ play.artist_name or 'Unknown' }}</a>
+                    </td>
+                    <td>{{ play.track_name or 'Unknown' }}</td>
+                    <td class="timestamp">{{ play.timestamp }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top: 1rem;">
+            <a href="/plays" class="btn btn-secondary">View All Plays</a>
+        </div>
+        {% else %}
+        <p style="color: #b3b3b3;">No plays recorded yet</p>
+        {% endif %}
+    </div>
+    
+    <div class="card">
+        <h2>🤖 Recent Decisions</h2>
+        {% if decisions %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Artist</th>
+                    <th>Result</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for decision in decisions[:5] %}
+                <tr>
+                    <td>
+                        <a href="/artist/{{ decision.artist_id }}">{{ decision.artist_name or 'Unknown' }}</a>
+                    </td>
+                    <td>
+                        {% if decision.is_artificial == 1 %}
+                        <span class="badge badge-ai">AI Generated</span>
+                        {% elif decision.is_artificial == 0 %}
+                        <span class="badge badge-human">Human</span>
+                        {% else %}
+                        <span class="badge badge-unknown">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="confidence">{{ "%.0f"|format(decision.confidence * 100) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top: 1rem;">
+            <a href="/decisions" class="btn btn-secondary">View All Decisions</a>
+        </div>
+        {% else %}
+        <p style="color: #b3b3b3;">No decisions recorded yet</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    // Auto-refresh current playback every 5 seconds
+    setInterval(async () => {
+        try {
+            const response = await fetch('/api/current');
+            const data = await response.json();
+            
+            if (data.current_track) {
+                const currentDiv = document.getElementById('current-playback');
+                const currentTrack = data.current_track;
+                
+                currentDiv.innerHTML = `
+                    <div class="current-playback">
+                        <h2>🎵 Now Playing</h2>
+                        <div class="track-info">
+                            <strong>${currentTrack.track_name}</strong> by <strong>${currentTrack.artist_name}</strong>
+                        </div>
+                        <div class="timestamp">Started: ${currentTrack.timestamp}</div>
+                        ${currentTrack.artist_id ? `
+                        <div style="margin-top: 1rem;">
+                            <a href="/artist/${currentTrack.artist_id}" class="btn">View Artist Details</a>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Failed to refresh playback:', error);
+        }
+    }, 5000);
+</script>
+{% endblock %}

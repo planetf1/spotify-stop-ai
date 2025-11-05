@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Spotify Stop AI{% endblock %}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #121212;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+        
+        header {
+            background: #1db954;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+        
+        nav {
+            background: #181818;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #282828;
+        }
+        
+        nav a {
+            color: #b3b3b3;
+            text-decoration: none;
+            margin-right: 2rem;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover, nav a.active {
+            color: #ffffff;
+            background: #282828;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .card {
+            background: #181818;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #282828;
+        }
+        
+        .card h2 {
+            color: #1db954;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .card h3 {
+            color: #1db954;
+            margin-bottom: 0.8rem;
+            font-size: 1.2rem;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #282828;
+        }
+        
+        th {
+            color: #1db954;
+            font-weight: 600;
+            background: #0d0d0d;
+        }
+        
+        tr:hover {
+            background: #282828;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .badge-ai {
+            background: #e22134;
+            color: white;
+        }
+        
+        .badge-human {
+            background: #1db954;
+            color: white;
+        }
+        
+        .badge-unknown {
+            background: #535353;
+            color: white;
+        }
+        
+        .confidence {
+            color: #b3b3b3;
+            font-size: 0.9rem;
+        }
+        
+        .btn {
+            background: #1db954;
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
+        }
+        
+        .btn-danger {
+            background: #e22134;
+        }
+        
+        .btn-danger:hover {
+            background: #ff2d3f;
+        }
+        
+        .btn-secondary {
+            background: #535353;
+        }
+        
+        .btn-secondary:hover {
+            background: #686868;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #b3b3b3;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        input[type="search"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            background: #282828;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            color: white;
+            font-family: inherit;
+        }
+        
+        input[type="text"]:focus,
+        input[type="search"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #1db954;
+        }
+        
+        .current-playback {
+            background: linear-gradient(135deg, #1db954 0%, #1ed760 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .current-playback h2 {
+            color: white;
+            margin-bottom: 1rem;
+        }
+        
+        .track-info {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .track-info strong {
+            font-weight: 700;
+        }
+        
+        .source-result {
+            background: #0d0d0d;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-radius: 4px;
+            border-left: 3px solid #1db954;
+        }
+        
+        .source-name {
+            color: #1db954;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-info {
+            background: #0d3b66;
+            border-left: 3px solid #2196f3;
+        }
+        
+        .alert-warning {
+            background: #664d03;
+            border-left: 3px solid #ffc107;
+        }
+        
+        .pagination {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 2rem;
+        }
+        
+        .search-box {
+            margin-bottom: 1.5rem;
+        }
+        
+        .search-box input {
+            max-width: 500px;
+        }
+        
+        a {
+            color: #1db954;
+        }
+        
+        a:hover {
+            color: #1ed760;
+        }
+        
+        .timestamp {
+            color: #b3b3b3;
+            font-size: 0.9rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            nav a {
+                margin-right: 1rem;
+                font-size: 0.9rem;
+            }
+            
+            table {
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+    {% block extra_style %}{% endblock %}
+</head>
+<body>
+    <header>
+        <h1>🎵 Spotify Stop AI</h1>
+    </header>
+    
+    <nav>
+        <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a>
+        <a href="/plays" class="{% if '/plays' in request.url.path %}active{% endif %}">Plays</a>
+        <a href="/decisions" class="{% if '/decisions' in request.url.path %}active{% endif %}">Decisions</a>
+        <a href="http://127.0.0.1:8889/docs" target="_blank">API Docs</a>
+    </nav>
+    
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    
+    {% block extra_script %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,25 @@
+# Spotify API client
+spotipy>=2.23.0
+
+# HTTP client for Ollama and data sources
+httpx>=0.27.0
+
+# Database
+aiosqlite>=0.20.0
+
+# Web framework for review API
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Configuration
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+
+# Date/time utilities
+python-dateutil>=2.9.0
+
+# SPARQL queries for Wikidata
+SPARQLWrapper>=2.0.0
+
+# Rate limiting
+aiolimiter>=1.1.0

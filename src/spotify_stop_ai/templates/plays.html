@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}All Plays - Spotify Stop AI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📊 All Plays</h2>
+    
+    <div class="search-box">
+        <form method="get" action="/plays">
+            <input type="search" name="search" placeholder="Search by artist or track name..." 
+                   value="{{ search or '' }}">
+            <button type="submit" class="btn" style="margin-top: 0.5rem;">Search</button>
+            {% if search %}
+            <a href="/plays" class="btn btn-secondary" style="margin-top: 0.5rem;">Clear Search</a>
+            {% endif %}
+        </form>
+    </div>
+    
+    {% if plays %}
+    <table>
+        <thead>
+            <tr>
+                <th>Artist</th>
+                <th>Track</th>
+                <th>Time</th>
+                <th>Skipped</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for play in plays %}
+            <tr>
+                <td>
+                    {% if play.artist_id %}
+                    <a href="/artist/{{ play.artist_id }}">{{ play.artist_name or 'Unknown' }}</a>
+                    {% else %}
+                    {{ play.artist_name or 'Unknown' }}
+                    {% endif %}
+                </td>
+                <td>{{ play.track_name or 'Unknown' }}</td>
+                <td class="timestamp">{{ play.timestamp }}</td>
+                <td>{% if play.skipped %}✅ Yes{% else %}❌ No{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/plays?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}" class="btn btn-secondary">← Previous</a>
+        {% endif %}
+        <span class="btn btn-secondary" style="background: #282828; cursor: default;">Page {{ page }}</span>
+        {% if plays|length == 50 %}
+        <a href="/plays?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}" class="btn btn-secondary">Next →</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p style="color: #b3b3b3;">
+        {% if search %}
+        No plays found matching "{{ search }}"
+        {% else %}
+        No plays recorded yet
+        {% endif %}
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

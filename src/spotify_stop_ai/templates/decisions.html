@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}All Decisions - Spotify Stop AI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>🤖 All Classification Decisions</h2>
+    
+    <div class="search-box">
+        <form method="get" action="/decisions">
+            <label for="filter">Filter by classification:</label>
+            <select name="filter_artificial" id="filter" onchange="this.form.submit()">
+                <option value="">All</option>
+                <option value="true" {% if filter_artificial == True %}selected{% endif %}>AI Generated</option>
+                <option value="false" {% if filter_artificial == False %}selected{% endif %}>Human</option>
+            </select>
+        </form>
+    </div>
+    
+    {% if decisions %}
+    <table>
+        <thead>
+            <tr>
+                <th>Artist</th>
+                <th>Result</th>
+                <th>Confidence</th>
+                <th>Reason</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for decision in decisions %}
+            <tr>
+                <td>
+                    {% if decision.artist_id %}
+                    <a href="/artist/{{ decision.artist_id }}">{{ decision.artist_name or 'Unknown' }}</a>
+                    {% else %}
+                    {{ decision.artist_name or 'Unknown' }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if decision.is_artificial == 1 %}
+                    <span class="badge badge-ai">AI Generated</span>
+                    {% elif decision.is_artificial == 0 %}
+                    <span class="badge badge-human">Human</span>
+                    {% else %}
+                    <span class="badge badge-unknown">Unknown</span>
+                    {% endif %}
+                </td>
+                <td class="confidence">{{ "%.0f"|format(decision.confidence * 100) }}%</td>
+                <td style="max-width: 400px; font-size: 0.9rem;">
+                    {{ decision.reason[:100] }}{% if decision.reason and decision.reason|length > 100 %}...{% endif %}
+                </td>
+                <td class="timestamp">{{ decision.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/decisions?page={{ page - 1 }}{% if filter_artificial is not none %}&filter_artificial={{ filter_artificial }}{% endif %}" class="btn btn-secondary">← Previous</a>
+        {% endif %}
+        <span class="btn btn-secondary" style="background: #282828; cursor: default;">Page {{ page }}</span>
+        {% if decisions|length == 50 %}
+        <a href="/decisions?page={{ page + 1 }}{% if filter_artificial is not none %}&filter_artificial={{ filter_artificial }}{% endif %}" class="btn btn-secondary">Next →</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p style="color: #b3b3b3;">No decisions recorded yet</p>
+    {% endif %}
+</div>
+{% endblock %}

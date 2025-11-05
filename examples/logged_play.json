@@ -1,0 +1,71 @@
+{
+  "id": "play_20251104_143022_abc123",
+  "timestamp": "2025-11-04T14:30:22.450Z",
+  "spotify_track_id": "3n3Ppam7vgaVa1iaRUc9Lp",
+  "track_name": "Example Song Title",
+  "track_duration_ms": 234567,
+  "track_explicit": false,
+  "track_popularity": 72,
+  "track_is_local": false,
+  "artists": [
+    {
+      "id": "4Z8W4fKeB5YxbusRsdQVPb",
+      "name": "Example Artist",
+      "uri": "spotify:artist:4Z8W4fKeB5YxbusRsdQVPb"
+    }
+  ],
+  "album": {
+    "id": "2ODvWsOgouMbaA5xf0RkJe",
+    "name": "Example Album",
+    "release_date": "2023-06-15",
+    "uri": "spotify:album:2ODvWsOgouMbaA5xf0RkJe"
+  },
+  "context": {
+    "type": "playlist",
+    "uri": "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    "href": "https://api.spotify.com/v1/playlists/37i9dQZF1DXcBWIGoYBM5M",
+    "name": "Discover Weekly",
+    "owner": "spotify"
+  },
+  "device": {
+    "id": "abc123device456",
+    "name": "MacBook Pro",
+    "type": "Computer",
+    "is_active": true,
+    "volume_percent": 45
+  },
+  "progress_ms": 12345,
+  "is_playing": true,
+  "classification": {
+    "decision": "artificial",
+    "confidence": 0.95,
+    "sources_agreeing": 3,
+    "sources": {
+      "wikidata": {
+        "result": "virtual_idol",
+        "signals": ["Q24236999"],
+        "url": "https://www.wikidata.org/wiki/Q552682"
+      },
+      "musicbrainz": {
+        "result": "vocaloid",
+        "tags": ["vocaloid", "virtual", "japanese"],
+        "url": "https://musicbrainz.org/artist/abc123"
+      },
+      "lastfm": {
+        "result": "virtual",
+        "tags": [
+          {"name": "vocaloid", "count": 1234},
+          {"name": "virtual idol", "count": 567}
+        ],
+        "url": "https://www.last.fm/music/Example+Artist"
+      }
+    },
+    "llm_fallback_used": false
+  },
+  "action_taken": {
+    "skipped": true,
+    "removed_from_playlist": false,
+    "added_to_blocked_playlist": false,
+    "timestamp": "2025-11-04T14:30:23.120Z"
+  }
+}
