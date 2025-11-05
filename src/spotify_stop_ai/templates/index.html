@@ -66,6 +66,7 @@
                     <th>Artist</th>
                     <th>Result</th>
                     <th>Confidence</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -82,8 +83,30 @@
                         {% else %}
                         <span class="badge badge-unknown">Unknown</span>
                         {% endif %}
+                        {% if decision.context_count %}
+                        <span style="color: #b3b3b3; font-size: 0.8rem; margin-left: 0.5rem;" title="Checked {{ decision.context_count }} sources">
+                            ({{ decision.context_count }} sources)
+                        </span>
+                        {% endif %}
                     </td>
                     <td class="confidence">{{ "%.0f"|format(decision.confidence * 100) }}%</td>
+                    <td>
+                        <a href="/artist/{{ decision.artist_id }}" class="btn" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Details</a>
+                        {% if decision.is_artificial != 1 %}
+                        <form method="post" action="/override/{{ decision.artist_id }}" style="display: inline;">
+                            <input type="hidden" name="is_artificial" value="true">
+                            <input type="hidden" name="reason" value="Manual override from dashboard">
+                            <button type="submit" class="btn btn-danger" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Mark AI</button>
+                        </form>
+                        {% endif %}
+                        {% if decision.is_artificial != 0 %}
+                        <form method="post" action="/override/{{ decision.artist_id }}" style="display: inline;">
+                            <input type="hidden" name="is_artificial" value="false">
+                            <input type="hidden" name="reason" value="Manual override from dashboard">
+                            <button type="submit" class="btn" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Mark Human</button>
+                        </form>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

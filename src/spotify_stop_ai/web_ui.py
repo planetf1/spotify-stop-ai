@@ -36,8 +36,22 @@ def create_web_ui(database, classifier, spotify_client, monitor):
         # Get recent plays
         plays = await database.get_plays(limit=10)
         
-        # Get recent decisions
-        decisions = await database.get_decisions(limit=10)
+        # Get recent decisions with contexts
+        decisions_raw = await database.get_decisions(limit=10)
+        
+        # Enrich decisions with context counts
+        decisions = []
+        for decision in decisions_raw:
+            # Get context count for this decision
+            async with database.db.execute(
+                "SELECT COUNT(*) as count FROM decision_contexts WHERE decision_id = ?",
+                (decision['id'],)
+            ) as cursor:
+                row = await cursor.fetchone()
+                context_count = dict(row)['count'] if row else 0
+            
+            decision['context_count'] = context_count
+            decisions.append(decision)
         
         return templates.TemplateResponse("index.html", {
             "request": request,

@@ -405,10 +405,12 @@ class Database:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
                 SELECT p.*, t.name as track_name, a.name as album_name,
+                       ar.name as artist_name,
                        c.name as context_name, c.type as context_type
                 FROM plays p
                 LEFT JOIN tracks t ON p.track_id = t.id
                 LEFT JOIN albums a ON p.album_id = a.id
+                LEFT JOIN artists ar ON p.artist_id = ar.id
                 LEFT JOIN contexts c ON p.context_uri = c.uri
                 ORDER BY p.timestamp DESC
                 LIMIT ? OFFSET ?
