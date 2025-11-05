@@ -120,72 +120,83 @@ async def main():
     logger.info("Initializing playback monitor...")
     monitor = PlaybackMonitor(spotify_client, classifier, database, config)
     
-    # Start API if enabled
-    api_task = None
-    web_ui_task = None
+    # Get server configuration
     api_host = config["api"]["host"]
     api_port = config["api"]["port"]
     web_ui_host = config["api"]["host"]
     web_ui_port = config.get("web_ui", {}).get("port", 8890)
     
+    # Start servers if enabled
+    servers = []
+    
     if config.get("api", {}).get("enabled", True):
+        import uvicorn
+        from spotify_stop_ai.api import create_api
+        from spotify_stop_ai.web_ui import create_web_ui
+        
+        # Create API server
         logger.info("Starting review API...")
-        logger.info(f"Review API available at http://{api_host}:{api_port}")
+        api = create_api(database, classifier)
+        api_config = uvicorn.Config(
+            api, host=api_host, port=api_port, log_level="error"
+        )
+        api_server = uvicorn.Server(api_config)
+        servers.append(("API", api_server, f"http://{api_host}:{api_port}/docs"))
         
-        # Run API in background task
-        async def run_api_async():
-            """Run API in async context."""
-            import uvicorn
-            from spotify_stop_ai.api import create_api
-            
-            api = create_api(database, classifier)
-            config_uvicorn = uvicorn.Config(
-                api, host=api_host, port=api_port, log_level="info"
-            )
-            server = uvicorn.Server(config_uvicorn)
-            await server.serve()
-        
-        api_task = asyncio.create_task(run_api_async())
-        
-        # Start Web UI
+        # Create Web UI server
         logger.info("Starting web UI...")
-        logger.info(f"Web UI available at http://{web_ui_host}:{web_ui_port}")
+        web_ui = create_web_ui(database, classifier, spotify_client, monitor)
+        web_ui_config = uvicorn.Config(
+            web_ui, host=web_ui_host, port=web_ui_port, log_level="error"
+        )
+        web_ui_server = uvicorn.Server(web_ui_config)
+        servers.append(("Web UI", web_ui_server, f"http://{web_ui_host}:{web_ui_port}"))
         
-        async def run_web_ui_async():
-            """Run Web UI in async context."""
-            import uvicorn
-            from spotify_stop_ai.web_ui import create_web_ui
+        # Start all servers concurrently
+        async def run_servers():
+            """Run all servers concurrently."""
+            tasks = []
+            for name, server, url in servers:
+                task = asyncio.create_task(server.serve())
+                tasks.append(task)
             
-            app = create_web_ui(database, classifier, spotify_client, monitor)
-            config_uvicorn = uvicorn.Config(
-                app, host=web_ui_host, port=web_ui_port, log_level="info"
-            )
-            server = uvicorn.Server(config_uvicorn)
-            await server.serve()
+            # Wait a moment for servers to start
+            await asyncio.sleep(1)
+            
+            # Print startup banner
+            print("\n" + "="*60)
+            print("🎵 Spotify Stop AI - Running")
+            print("="*60)
+            print(f"📊 Web UI:  http://{web_ui_host}:{web_ui_port}")
+            print(f"🔌 API:     http://{api_host}:{api_port}/docs")
+            print("="*60 + "\n")
+            
+            # Start monitor
+            monitor_task = asyncio.create_task(monitor.start())
+            tasks.append(monitor_task)
+            
+            # Wait for any task to complete (they shouldn't unless there's an error)
+            await asyncio.gather(*tasks, return_exceptions=True)
         
-        web_ui_task = asyncio.create_task(run_web_ui_async())
-    
-    # Print startup info
-    if api_task and web_ui_task:
-        print("\n" + "="*60)
-        print("🎵 Spotify Stop AI - Running")
-        print("="*60)
-        print(f"📊 Web UI:  http://{web_ui_host}:{web_ui_port}")
-        print(f"🔌 API:     http://{api_host}:{api_port}/docs")
-        print("="*60 + "\n")
-    
-    # Start monitoring
-    try:
-        await monitor.start()
-    except KeyboardInterrupt:
-        logger.info("Received interrupt signal")
-    finally:
-        await monitor.stop()
-        if api_task:
-            api_task.cancel()
-        if web_ui_task:
-            web_ui_task.cancel()
-        logger.info("Spotify Stop AI stopped")
+        try:
+            await run_servers()
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal")
+        finally:
+            await monitor.stop()
+            # Shutdown servers
+            for name, server, url in servers:
+                await server.shutdown()
+            logger.info("Spotify Stop AI stopped")
+    else:
+        # No API, just run monitor
+        try:
+            await monitor.start()
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal")
+        finally:
+            await monitor.stop()
+            logger.info("Spotify Stop AI stopped")
 
 
 def cli_main():
