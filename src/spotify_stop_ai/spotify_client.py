@@ -192,7 +192,8 @@ class SpotifyClient:
             return playlist
             
         except Exception as e:
-            # Some playlists (like algorithmic mixes) may not be publicly accessible
+            # Some playlists (like algorithmic mixes, radio stations) may not be publicly accessible
+            # This is expected behavior, not an error
             logger.debug(f"Could not fetch playlist {playlist_id}: {e}")
             return None
     

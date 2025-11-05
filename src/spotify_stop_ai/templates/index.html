@@ -11,7 +11,115 @@
             <strong>{{ current_track.track_name }}</strong> by <strong>{{ current_track.artist_name }}</strong>
         </div>
         <div class="timestamp">Started: {{ current_track.timestamp }}</div>
-        {% if current_track.artist_id %}
+        
+        {% if current_artist_details %}
+        <div class="card" style="margin-top: 1.5rem; padding: 1.5rem;">
+            <h3 style="margin-top: 0;">Classification Results</h3>
+            
+            <!-- Overall Decision -->
+            <div style="margin-bottom: 1.5rem; padding: 1rem; background-color: rgba(29, 185, 84, 0.1); border-left: 4px solid 
+                {% if current_artist_details.is_artificial == 1 %}#e22134{% elif current_artist_details.is_artificial == 0 %}#1db954{% else %}#b3b3b3{% endif %};">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 1.1rem;">Decision:</strong>
+                        {% if current_artist_details.is_artificial == 1 %}
+                        <span class="badge badge-ai" style="font-size: 1rem; margin-left: 0.5rem;">AI Generated</span>
+                        {% elif current_artist_details.is_artificial == 0 %}
+                        <span class="badge badge-human" style="font-size: 1rem; margin-left: 0.5rem;">Human Artist</span>
+                        {% else %}
+                        <span class="badge badge-unknown" style="font-size: 1rem; margin-left: 0.5rem;">Unknown</span>
+                        {% endif %}
+                        {% if current_artist_details.overridden %}
+                        <span style="color: #1db954; font-size: 0.9rem; margin-left: 0.5rem;" title="Manual override applied">⚠️ Override</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <strong>Confidence:</strong> 
+                        <span style="font-size: 1.1rem;">{{ "%.0f"|format(current_artist_details.confidence * 100) }}%</span>
+                    </div>
+                </div>
+                {% if current_artist_details.label %}
+                <div style="margin-top: 0.5rem;">
+                    <strong>Label:</strong> <span style="text-transform: capitalize;">{{ current_artist_details.label.replace('_', ' ') }}</span>
+                </div>
+                {% endif %}
+                {% if current_artist_details.overridden and current_artist_details.override_reason %}
+                <div style="margin-top: 0.5rem; color: #b3b3b3;">
+                    <strong>Override Reason:</strong> {{ current_artist_details.override_reason }}
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Source Results -->
+            {% if current_artist_details.sources %}
+            <h4 style="margin-top: 1.5rem; margin-bottom: 1rem;">Source Results:</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                {% for source in current_artist_details.sources %}
+                <div style="padding: 1rem; border: 2px solid 
+                    {% if source.is_artificial == 1 %}#e22134{% elif source.is_artificial == 0 %}#1db954{% else %}#b3b3b3{% endif %}; 
+                    border-radius: 8px; background-color: rgba(
+                    {% if source.is_artificial == 1 %}226, 33, 52{% elif source.is_artificial == 0 %}29, 185, 84{% else %}179, 179, 179{% endif %}, 0.05);">
+                    <div style="font-weight: bold; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; color: #b3b3b3;">
+                        {{ source.source_name }}
+                    </div>
+                    <div style="margin-bottom: 0.5rem;">
+                        {% if source.is_artificial == 1 %}
+                        <span class="badge badge-ai">AI</span>
+                        {% elif source.is_artificial == 0 %}
+                        <span class="badge badge-human">Human</span>
+                        {% else %}
+                        <span class="badge badge-unknown">Unknown</span>
+                        {% endif %}
+                        <span style="margin-left: 0.5rem;">{{ "%.0f"|format(source.confidence * 100) }}%</span>
+                    </div>
+                    {% if source.label %}
+                    <div style="font-size: 0.85rem; color: #b3b3b3;">
+                        Label: <span style="text-transform: capitalize;">{{ source.label.replace('_', ' ') }}</span>
+                    </div>
+                    {% endif %}
+                    {% if source.tags %}
+                    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #b3b3b3;">
+                        Tags: {{ source.tags[:3]|join(', ') }}{% if source.tags|length > 3 %}...{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            <!-- LLM Fallback Analysis -->
+            {% if current_artist_details.llm_output %}
+            <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid #ffa500; border-radius: 8px; background-color: rgba(255, 165, 0, 0.05);">
+                <h4 style="margin-top: 0; color: #ffa500;">🤖 LLM Analysis</h4>
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Model:</strong> {{ current_artist_details.llm_output.model }}
+                </div>
+                {% if current_artist_details.llm_output.output %}
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Result:</strong>
+                    {% if current_artist_details.llm_output.output.is_artificial == True %}
+                    <span class="badge badge-ai">AI</span>
+                    {% elif current_artist_details.llm_output.output.is_artificial == False %}
+                    <span class="badge badge-human">Human</span>
+                    {% else %}
+                    <span class="badge badge-unknown">Unknown</span>
+                    {% endif %}
+                    <span style="margin-left: 0.5rem;">{{ "%.0f"|format(current_artist_details.llm_output.output.confidence * 100) }}%</span>
+                </div>
+                {% if current_artist_details.llm_output.output.reason %}
+                <div style="margin-top: 0.5rem; padding: 0.5rem; background-color: rgba(0, 0, 0, 0.2); border-radius: 4px; font-size: 0.9rem;">
+                    {{ current_artist_details.llm_output.output.reason }}
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <div style="margin-top: 1.5rem;">
+                <a href="/artist/{{ current_track.artist_id }}" class="btn">Full Details & History</a>
+            </div>
+        </div>
+        {% elif current_track.artist_id %}
         <div style="margin-top: 1rem;">
             <a href="/artist/{{ current_track.artist_id }}" class="btn">View Artist Details</a>
         </div>
@@ -82,6 +190,9 @@
                         <span class="badge badge-human">Human</span>
                         {% else %}
                         <span class="badge badge-unknown">Unknown</span>
+                        {% endif %}
+                        {% if decision.overridden %}
+                        <span style="color: #1db954; font-size: 0.75rem; margin-left: 0.5rem;" title="Manual override applied">⚠️</span>
                         {% endif %}
                         {% if decision.context_count %}
                         <span style="color: #b3b3b3; font-size: 0.8rem; margin-left: 0.5rem;" title="Checked {{ decision.context_count }} sources">

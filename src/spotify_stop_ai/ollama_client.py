@@ -35,9 +35,11 @@ class OllamaClient:
         try:
             with open(prompt_template_path, 'r') as f:
                 self.prompt_template = f.read()
+            logger.info("Loaded prompt template from %s", prompt_template_path)
         except Exception as e:
-            logger.warning(f"Failed to load prompt template: {e}")
+            logger.warning("Failed to load prompt template: %s", e)
             self.prompt_template = self._default_prompt_template()
+            logger.info("Using default prompt template")
     
     async def classify(self, artist_name: str, evidence: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Classify artist using LLM fallback with web search.
@@ -50,8 +52,10 @@ class OllamaClient:
             Classification result dict or None if disabled/failed
         """
         if not self.enabled:
+            logger.debug("LLM classification skipped - disabled in config")
             return None
         
+        logger.info("Starting LLM classification for artist: %s", artist_name)
         start_time = time.time()
         
         try:
@@ -72,9 +76,26 @@ class OllamaClient:
             
             # Parse JSON output
             try:
-                output = json.loads(result["response"])
+                raw_response = result["response"]
+                logger.debug("Raw LLM response: %s", raw_response[:500])  # Log first 500 chars
+                
+                # Strip markdown code blocks if present
+                response_text = raw_response.strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]  # Remove ```json
+                elif response_text.startswith("```"):
+                    response_text = response_text[3:]  # Remove ```
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]  # Remove closing ```
+                response_text = response_text.strip()
+                
+                output = json.loads(response_text)
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse LLM JSON output: {e}")
+                logger.error("Failed to parse LLM JSON output: %s", e)
+                logger.error("Raw response was: %s", result.get('response', 'N/A')[:1000])
+                return None
+            except Exception as e:  # pylint: disable=broad-except
+                logger.error("Error processing LLM response: %s", e)
                 return None
             
             # Validate output
@@ -97,8 +118,8 @@ class OllamaClient:
                 "query_time_ms": int((time.time() - start_time) * 1000)
             }
         
-        except Exception as e:
-            logger.error(f"Ollama classification failed: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Ollama classification failed: %s", e)
             return None
     
     async def _generate(self, prompt: str) -> Optional[Dict[str, Any]]:
@@ -128,11 +149,11 @@ class OllamaClient:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    logger.error(f"Ollama API error: {response.status_code} {response.text}")
+                    logger.error("Ollama API error: %s %s", response.status_code, response.text)
                     return None
         
         except Exception as e:
-            logger.error(f"Ollama API request failed: {e}")
+            logger.error("Ollama API request failed: %s", e)
             return None
     
     async def _web_search(self, artist_name: str) -> List[Dict[str, Any]]:
@@ -157,6 +178,7 @@ class OllamaClient:
                 for query in queries:
                     try:
                         results = list(ddgs.text(query, max_results=3))
+                        logger.debug("Query '%s' returned %d results", query, len(results))
                         all_results.extend(results)
                     except Exception as e:  # pylint: disable=broad-except
                         logger.warning("DuckDuckGo search failed for '%s': %s", query, e)

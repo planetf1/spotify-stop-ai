@@ -399,18 +399,29 @@ class Database:
                     return dict(row)
                 return None
     
+    async def invalidate_cache(self, artist_id: str) -> None:
+        """Invalidate cached decisions for an artist by setting cached_until to past."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE decisions 
+                SET cached_until = '2000-01-01T00:00:00'
+                WHERE artist_id = ?
+            """, (artist_id,))
+            await db.commit()
+    
     async def get_plays(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """Get recent plays."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
                 SELECT p.*, t.name as track_name, a.name as album_name,
-                       ar.name as artist_name,
+                       ar.name as artist_name, ar.id as artist_id,
                        c.name as context_name, c.type as context_type
                 FROM plays p
                 LEFT JOIN tracks t ON p.track_id = t.id
                 LEFT JOIN albums a ON p.album_id = a.id
-                LEFT JOIN artists ar ON p.artist_id = ar.id
+                LEFT JOIN track_artists ta ON p.track_id = ta.track_id AND ta.position = 0
+                LEFT JOIN artists ar ON ta.artist_id = ar.id
                 LEFT JOIN contexts c ON p.context_uri = c.uri
                 ORDER BY p.timestamp DESC
                 LIMIT ? OFFSET ?
@@ -429,5 +440,135 @@ class Database:
                 ORDER BY d.timestamp DESC
                 LIMIT ? OFFSET ?
             """, (limit, offset)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+    
+    async def get_decision_context_count(self, decision_id: int) -> int:
+        """Get count of sources for a decision."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) as count FROM sources WHERE decision_id = ?",
+                (decision_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+    
+    async def search_plays(self, search: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Search plays by artist or track name."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT p.*, ar.name as artist_name, ar.id as artist_id, t.name as track_name
+                FROM plays p
+                JOIN tracks t ON p.track_id = t.id
+                JOIN track_artists ta ON p.track_id = ta.track_id AND ta.position = 0
+                JOIN artists ar ON ta.artist_id = ar.id
+                WHERE ar.name LIKE ? OR t.name LIKE ?
+                ORDER BY p.timestamp DESC
+                LIMIT ? OFFSET ?
+            """, (f"%{search}%", f"%{search}%", limit, offset)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+    
+    async def get_plays_for_artist(self, artist_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get plays for a specific artist."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT p.*, t.name as track_name
+                FROM plays p
+                JOIN tracks t ON p.track_id = t.id
+                JOIN track_artists ta ON p.track_id = ta.track_id
+                WHERE ta.artist_id = ?
+                ORDER BY p.timestamp DESC
+                LIMIT ?
+            """, (artist_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+    
+    async def get_artist(self, artist_id: str) -> Optional[Dict[str, Any]]:
+        """Get artist by ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM artists WHERE id = ?", (artist_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
+    
+    async def get_decisions_with_sources(self, artist_id: str) -> List[Dict[str, Any]]:
+        """Get all decisions for an artist with their sources and LLM outputs."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Get decisions with sources
+            async with db.execute("""
+                SELECT d.*, s.source_name, s.result, s.signals, s.url
+                FROM decisions d
+                LEFT JOIN sources s ON d.id = s.decision_id
+                WHERE d.artist_id = ?
+                ORDER BY d.timestamp DESC
+            """, (artist_id,)) as cursor:
+                rows = await cursor.fetchall()
+                
+                # Group sources by decision
+                decisions_map = {}
+                for row in rows:
+                    row_dict = dict(row)
+                    decision_id = row_dict['id']
+                    
+                    if decision_id not in decisions_map:
+                        decisions_map[decision_id] = {
+                            'id': row_dict['id'],
+                            'artist_id': row_dict['artist_id'],
+                            'timestamp': row_dict['timestamp'],
+                            'label': row_dict['label'],
+                            'is_artificial': row_dict['is_artificial'],
+                            'confidence': row_dict['confidence'],
+                            'sources_agreeing': row_dict['sources_agreeing'],
+                            'min_required': row_dict['min_required'],
+                            'band_policy_applied': row_dict['band_policy_applied'],
+                            'llm_used': row_dict['llm_used'],
+                            'decision_reason': row_dict['decision_reason'],
+                            'sources': [],
+                            'llm_output': None
+                        }
+                    
+                    if row_dict['source_name']:
+                        decisions_map[decision_id]['sources'].append({
+                            'source_name': row_dict['source_name'],
+                            'result': row_dict['result'],
+                            'signals': row_dict['signals'],
+                            'url': row_dict['url']
+                        })
+            
+            # Get LLM outputs for decisions that used LLM
+            for decision_id, decision in decisions_map.items():
+                if decision['llm_used']:
+                    async with db.execute("""
+                        SELECT model, prompt, output, load_duration_ms, prompt_eval_count,
+                               eval_count, total_duration_ms
+                        FROM llm_outputs
+                        WHERE decision_id = ?
+                        ORDER BY id DESC LIMIT 1
+                    """, (decision_id,)) as cursor:
+                        llm_row = await cursor.fetchone()
+                        if llm_row:
+                            decision['llm_output'] = dict(llm_row)
+            
+            return list(decisions_map.values())
+    
+    async def get_decisions_filtered(self, is_artificial: bool, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get decisions filtered by artificial status."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT d.*, a.name as artist_name
+                FROM decisions d
+                LEFT JOIN artists a ON d.artist_id = a.id
+                WHERE d.is_artificial = ?
+                ORDER BY d.timestamp DESC
+                LIMIT ? OFFSET ?
+            """, (is_artificial, limit, offset)) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]

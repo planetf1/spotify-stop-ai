@@ -72,39 +72,115 @@
             </div>
         </div>
         
-        {% if decision.reason %}
+        {% if decision.decision_reason %}
         <div style="margin-bottom: 0.5rem;">
-            <strong>Reason:</strong> {{ decision.reason }}
+            <strong>Reason:</strong> {{ decision.decision_reason }}
         </div>
         {% endif %}
         
-        {% if decision.citations %}
         <div style="margin-bottom: 0.5rem;">
-            <strong>Citations:</strong> {{ decision.citations }}
+            <strong>Sources:</strong> {{ decision.sources_agreeing }} of {{ decision.min_required }} required sources agreed
+            {% if decision.band_policy_applied %}
+            <span style="color: #1db954;"> (Band policy applied)</span>
+            {% endif %}
+            {% if decision.llm_used %}
+            <span style="color: #ffeb3b;"> (LLM used)</span>
+            {% endif %}
         </div>
-        {% endif %}
         
-        {% if decision.contexts %}
-        <details style="margin-top: 1rem;">
-            <summary style="cursor: pointer; color: #1db954; font-weight: 600;">
-                📊 Source Details ({{ decision.contexts|length }} sources)
+        {% if decision.sources %}
+        <details open style="margin-top: 1rem; background: #181818; padding: 1rem; border-radius: 8px;">
+            <summary style="cursor: pointer; color: #1db954; font-weight: 600; font-size: 1.05rem; margin-bottom: 1rem;">
+                📊 Individual Source Results ({{ decision.sources|length }} sources checked)
             </summary>
             <div style="margin-top: 1rem;">
-                {% for context in decision.contexts %}
-                <div style="background: #181818; padding: 0.75rem; margin: 0.5rem 0; border-radius: 4px;">
-                    <div class="source-name">{{ context.source_name }}</div>
-                    <div>Result: {{ context.result }}</div>
-                    {% if context.signals %}
-                    <div>Signals: {{ context.signals }}</div>
+                {% for source in decision.sources %}
+                <div style="background: #282828; padding: 1rem; margin: 0.75rem 0; border-radius: 6px; border-left: 3px solid {% if source.result == 'artificial' or source.result == 'ai' %}#ff4444{% elif source.result == 'human' %}#1db954{% else %}#b3b3b3{% endif %};">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                        <div class="source-name" style="font-size: 1rem; font-weight: 600;">
+                            {{ source.source_name }}
+                        </div>
+                        <div>
+                            {% if source.result == 'artificial' or source.result == 'ai' %}
+                            <span class="badge badge-ai">AI</span>
+                            {% elif source.result == 'human' %}
+                            <span class="badge badge-human">Human</span>
+                            {% elif source.result == 'unknown' %}
+                            <span class="badge badge-unknown">Unknown</span>
+                            {% elif source.result == 'error' %}
+                            <span class="badge" style="background: #ff9800;">Error</span>
+                            {% else %}
+                            <span class="badge">{{ source.result }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    {% if source.signals %}
+                    <div style="margin-top: 0.5rem; color: #b3b3b3;">
+                        <strong style="color: #fff;">Signals:</strong> {{ source.signals }}
+                    </div>
                     {% endif %}
-                    {% if context.tags %}
-                    <div>Tags: {{ context.tags }}</div>
-                    {% endif %}
-                    {% if context.url %}
-                    <div><a href="{{ context.url }}" target="_blank">View Source</a></div>
+                    
+                    {% if source.url %}
+                    <div style="margin-top: 0.5rem;">
+                        <a href="{{ source.url }}" target="_blank" style="color: #1db954; text-decoration: none;">🔗 View Source Data</a>
+                    </div>
                     {% endif %}
                 </div>
                 {% endfor %}
+            </div>
+        </details>
+        {% else %}
+        <div style="margin-top: 1rem; color: #b3b3b3;">
+            <em>No individual source details available for this decision.</em>
+        </div>
+        {% endif %}
+        
+        {% if decision.llm_used and decision.llm_output %}
+        <details open style="margin-top: 1rem; background: #181818; padding: 1rem; border-radius: 8px; border: 2px solid #ffeb3b;">
+            <summary style="cursor: pointer; color: #ffeb3b; font-weight: 600; font-size: 1.05rem; margin-bottom: 1rem;">
+                🤖 LLM Fallback Analysis ({{ decision.llm_output.model }})
+            </summary>
+            <div style="margin-top: 1rem;">
+                <div style="background: #282828; padding: 1rem; border-radius: 6px;">
+                    <div style="margin-bottom: 1rem;">
+                        <strong style="color: #ffeb3b;">Model:</strong> {{ decision.llm_output.model }}
+                    </div>
+                    
+                    {% if decision.llm_output.output %}
+                    <div style="margin-bottom: 1rem;">
+                        <strong style="color: #ffeb3b;">LLM Response:</strong>
+                        <pre style="background: #1a1a1a; padding: 1rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; margin-top: 0.5rem; color: #e0e0e0;">{{ decision.llm_output.output }}</pre>
+                    </div>
+                    {% endif %}
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-top: 1rem; color: #b3b3b3; font-size: 0.9rem;">
+                        {% if decision.llm_output.prompt_eval_count %}
+                        <div>
+                            <strong>Prompt tokens:</strong> {{ decision.llm_output.prompt_eval_count }}
+                        </div>
+                        {% endif %}
+                        {% if decision.llm_output.eval_count %}
+                        <div>
+                            <strong>Response tokens:</strong> {{ decision.llm_output.eval_count }}
+                        </div>
+                        {% endif %}
+                        {% if decision.llm_output.total_duration_ms %}
+                        <div>
+                            <strong>Total time:</strong> {{ "%.0f"|format(decision.llm_output.total_duration_ms) }}ms
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    {% if decision.llm_output.prompt %}
+                    <details style="margin-top: 1rem;">
+                        <summary style="cursor: pointer; color: #1db954; font-size: 0.9rem;">
+                            View Full Prompt
+                        </summary>
+                        <pre style="background: #1a1a1a; padding: 1rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; margin-top: 0.5rem; color: #b3b3b3; font-size: 0.85rem;">{{ decision.llm_output.prompt }}</pre>
+                    </details>
+                    {% endif %}
+                </div>
             </div>
         </details>
         {% endif %}

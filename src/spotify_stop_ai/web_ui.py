@@ -33,29 +33,53 @@ def create_web_ui(database, classifier, spotify_client, monitor):
         """Home page with current playback."""
         current_track = monitor.current_track
         
+        # Get detailed classification for current artist if available
+        current_artist_details = None
+        if current_track and current_track.get('artist_id'):
+            artist_id = current_track['artist_id']
+            decisions_with_sources = await database.get_decisions_with_sources(artist_id)
+            if decisions_with_sources:
+                # Get the most recent decision
+                decision = decisions_with_sources[0]
+                
+                # Check for override
+                override = await database.get_override(artist_id)
+                if override:
+                    decision['is_artificial'] = override['is_artificial']
+                    decision['overridden'] = True
+                    decision['override_reason'] = override.get('reason', '')
+                else:
+                    decision['overridden'] = False
+                
+                current_artist_details = decision
+        
         # Get recent plays
         plays = await database.get_plays(limit=10)
         
         # Get recent decisions with contexts
         decisions_raw = await database.get_decisions(limit=10)
         
-        # Enrich decisions with context counts
+        # Enrich decisions with context counts and overrides
         decisions = []
         for decision in decisions_raw:
             # Get context count for this decision
-            async with database.db.execute(
-                "SELECT COUNT(*) as count FROM decision_contexts WHERE decision_id = ?",
-                (decision['id'],)
-            ) as cursor:
-                row = await cursor.fetchone()
-                context_count = dict(row)['count'] if row else 0
-            
+            context_count = await database.get_decision_context_count(decision['id'])
             decision['context_count'] = context_count
+            
+            # Check for override - if exists, it takes precedence
+            override = await database.get_override(decision['artist_id'])
+            if override:
+                decision['is_artificial'] = override['is_artificial']
+                decision['overridden'] = True
+            else:
+                decision['overridden'] = False
+            
             decisions.append(decision)
         
         return templates.TemplateResponse("index.html", {
             "request": request,
             "current_track": current_track,
+            "current_artist_details": current_artist_details,
             "plays": plays,
             "decisions": decisions
         })
@@ -72,18 +96,7 @@ def create_web_ui(database, classifier, spotify_client, monitor):
         
         if search:
             # Search by artist or track name
-            async with database.db.execute(
-                """SELECT p.*, a.name as artist_name, t.name as track_name
-                   FROM plays p
-                   JOIN artists a ON p.artist_id = a.id
-                   JOIN tracks t ON p.track_id = t.id
-                   WHERE a.name LIKE ? OR t.name LIKE ?
-                   ORDER BY p.timestamp DESC
-                   LIMIT ? OFFSET ?""",
-                (f"%{search}%", f"%{search}%", limit, offset)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                plays = [dict(row) for row in rows]
+            plays = await database.search_plays(search, limit, offset)
         else:
             plays = await database.get_plays(limit=limit, offset=offset)
         
@@ -105,17 +118,7 @@ def create_web_ui(database, classifier, spotify_client, monitor):
         offset = (page - 1) * limit
         
         if filter_artificial is not None:
-            async with database.db.execute(
-                """SELECT d.*, a.name as artist_name
-                   FROM decisions d
-                   JOIN artists a ON d.artist_id = a.id
-                   WHERE d.is_artificial = ?
-                   ORDER BY d.timestamp DESC
-                   LIMIT ? OFFSET ?""",
-                (filter_artificial, limit, offset)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                decisions = [dict(row) for row in rows]
+            decisions = await database.get_decisions_filtered(filter_artificial, limit, offset)
         else:
             decisions = await database.get_decisions(limit=limit, offset=offset)
         
@@ -130,69 +133,18 @@ def create_web_ui(database, classifier, spotify_client, monitor):
     async def artist_detail(request: Request, artist_id: str):
         """Artist detail page with all classifications."""
         # Get artist
-        async with database.db.execute(
-            "SELECT * FROM artists WHERE id = ?", (artist_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                return HTMLResponse("Artist not found", status_code=404)
-            artist = dict(row)
+        artist = await database.get_artist(artist_id)
+        if not artist:
+            return HTMLResponse("Artist not found", status_code=404)
         
-        # Get all decisions with contexts
-        async with database.db.execute(
-            """SELECT d.*, c.source_name, c.result, c.signals, c.tags, c.url
-               FROM decisions d
-               LEFT JOIN decision_contexts c ON d.id = c.decision_id
-               WHERE d.artist_id = ?
-               ORDER BY d.timestamp DESC""",
-            (artist_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            
-            # Group contexts by decision
-            decisions_map = {}
-            for row in rows:
-                row_dict = dict(row)
-                decision_id = row_dict['id']
-                
-                if decision_id not in decisions_map:
-                    decisions_map[decision_id] = {
-                        'id': row_dict['id'],
-                        'timestamp': row_dict['timestamp'],
-                        'label': row_dict['label'],
-                        'is_artificial': row_dict['is_artificial'],
-                        'confidence': row_dict['confidence'],
-                        'reason': row_dict['reason'],
-                        'citations': row_dict['citations'],
-                        'contexts': []
-                    }
-                
-                if row_dict['source_name']:
-                    decisions_map[decision_id]['contexts'].append({
-                        'source_name': row_dict['source_name'],
-                        'result': row_dict['result'],
-                        'signals': row_dict['signals'],
-                        'tags': row_dict['tags'],
-                        'url': row_dict['url']
-                    })
-            
-            decisions = list(decisions_map.values())
+        # Get all decisions with sources
+        decisions = await database.get_decisions_with_sources(artist_id)
         
         # Get override
         override = await database.get_override(artist_id)
         
         # Get plays for this artist
-        async with database.db.execute(
-            """SELECT p.*, t.name as track_name
-               FROM plays p
-               JOIN tracks t ON p.track_id = t.id
-               WHERE p.artist_id = ?
-               ORDER BY p.timestamp DESC
-               LIMIT 20""",
-            (artist_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            plays = [dict(row) for row in rows]
+        plays = await database.get_plays_for_artist(artist_id)
         
         return templates.TemplateResponse("artist.html", {
             "request": request,
@@ -220,7 +172,10 @@ def create_web_ui(database, classifier, spotify_client, monitor):
     
     @app.post("/reclassify/{artist_id}")
     async def reclassify_form(artist_id: str, artist_name: str = Form(...)):
-        """Reclassify artist from form."""
+        """Reclassify artist from form - forces fresh classification."""
+        # Invalidate cache to force fresh classification
+        await database.invalidate_cache(artist_id)
+        # Run classification
         await classifier.classify_artist(artist_id, artist_name)
         return RedirectResponse(f"/artist/{artist_id}", status_code=303)
     

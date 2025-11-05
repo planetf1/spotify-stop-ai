@@ -23,6 +23,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress Spotipy's noisy error logs for expected 404s (algorithmic playlists, etc.)
+class SpotipyErrorFilter(logging.Filter):
+    """Filter out expected 404 errors from Spotipy."""
+    def filter(self, record):
+        if record.levelno == logging.ERROR:
+            # Suppress 404 errors for playlist fetches (these are expected)
+            if "returned 404" in record.getMessage() and "playlists" in record.getMessage():
+                return False
+        return True
+
+spotipy_logger = logging.getLogger('spotipy.client')
+spotipy_logger.addFilter(SpotipyErrorFilter())
+logger = logging.getLogger(__name__)
+
 
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load configuration from YAML file.
