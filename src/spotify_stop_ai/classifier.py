@@ -1,4 +1,5 @@
 """Artist classification aggregator with multi-source agreement."""
+
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
@@ -14,72 +15,88 @@ logger = logging.getLogger(__name__)
 
 class ArtistClassifier:
     """Aggregate classification from multiple sources."""
-    
+
     # Labels considered "artificial"
     ARTIFICIAL_LABELS = {
-        "vocaloid", "vtuber", "virtual_idol", "virtual", "fictional",
-        "ai_generated", "virtual_band"
+        "vocaloid",
+        "vtuber",
+        "virtual_idol",
+        "virtual",
+        "fictional",
+        "ai_generated",
+        "virtual_band",
     }
-    
+
     def __init__(self, config: Dict[str, Any], database):
         """Initialize classifier with config.
-        
+
         Args:
             config: Configuration dict
             database: Database instance
         """
         self.config = config
         self.db = database
-        
+
         # Initialize classifiers
         self.classifiers: Dict[str, Any] = {}
-        
+
         if config["sources"]["wikidata"]["enabled"]:
             self.classifiers["wikidata"] = WikidataClassifier(
                 timeout=config["sources"]["wikidata"]["timeout_seconds"]
             )
-        
+
         if config["sources"]["musicbrainz"]["enabled"]:
             self.classifiers["musicbrainz"] = MusicBrainzClassifier(
                 user_agent=config["sources"]["musicbrainz"]["user_agent"],
                 timeout=config["sources"]["musicbrainz"]["timeout_seconds"],
-                rate_limit=config["sources"]["musicbrainz"]["rate_limit_per_second"]
+                rate_limit=config["sources"]["musicbrainz"]["rate_limit_per_second"],
             )
-        
+
         if config["sources"]["lastfm"]["enabled"]:
             self.classifiers["lastfm"] = LastFmClassifier(
                 api_key=config["sources"]["lastfm"]["api_key"],
                 timeout=config["sources"]["lastfm"]["timeout_seconds"],
-                min_tag_count=config["sources"]["lastfm"]["min_tag_count"]
+                min_tag_count=config["sources"]["lastfm"]["min_tag_count"],
             )
-        
+
         self.min_source_agreement = config["classification"]["min_source_agreement"]
-        self.band_policy = config["classification"]["band_policy"]["virtual_or_fictional_is_artificial"]
+        self.band_policy = config["classification"]["band_policy"][
+            "virtual_or_fictional_is_artificial"
+        ]
         self.cache_duration = config["classification"]["cache_duration_seconds"]
-        
+
         # Initialize LLM fallback if enabled
         self.ollama_client = None
         if config.get("ollama", {}).get("enabled"):
             try:
                 from pathlib import Path
+
                 # Prompt file is at project root, not in src package
-                prompt_path = Path(__file__).parent.parent.parent / "prompts" / "classify_artist.txt"
+                prompt_path = (
+                    Path(__file__).parent.parent.parent
+                    / "prompts"
+                    / "classify_artist.txt"
+                )
                 self.ollama_client = OllamaClient(config["ollama"], str(prompt_path))
-                logger.info(f"Ollama LLM fallback enabled with model {config['ollama'].get('model', 'unknown')}")
+                logger.info(
+                    f"Ollama LLM fallback enabled with model {config['ollama'].get('model', 'unknown')}"
+                )
             except Exception as e:
                 logger.warning(f"Failed to initialize Ollama client: {e}")
                 import traceback
+
                 logger.debug(traceback.format_exc())
-    
-    async def classify_artist(self, artist_id: str, artist_name: str,
-                             track_name: Optional[str] = None) -> Dict[str, Any]:
+
+    async def classify_artist(
+        self, artist_id: str, artist_name: str, track_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Classify artist as artificial or not.
-        
+
         Args:
             artist_id: Spotify artist ID
             artist_name: Artist name
             track_name: Optional track name for context
-            
+
         Returns:
             Classification decision dict
         """
@@ -101,19 +118,19 @@ class ArtistClassifier:
                 "decision_reason": f"User override: {override.get('reason', 'Manual classification')}",
                 "sources": {},
                 "llm_fallback": None,
-                "cached_until": None
+                "cached_until": None,
             }
-        
+
         # Check cache
         cached = await self.db.get_cached_decision(artist_id)
         if cached:
             logger.info(f"Using cached decision for artist {artist_name}")
             return self._decision_from_db(cached)
-        
+
         # Query all enabled sources
         logger.info(f"Classifying artist: {artist_name} (ID: {artist_id})")
         source_results = {}
-        
+
         for source_name, classifier in self.classifiers.items():
             try:
                 result = await classifier.classify(artist_name, artist_id)
@@ -121,30 +138,29 @@ class ArtistClassifier:
                 logger.debug(f"Source {source_name} result: {result}")
             except Exception as e:
                 logger.error(f"Classifier {source_name} failed: {e}")
-                source_results[source_name] = {
-                    "success": False,
-                    "error": str(e)
-                }
-        
+                source_results[source_name] = {"success": False, "error": str(e)}
+
         # Aggregate results
-        decision = await self._aggregate_sources(
-            artist_id, artist_name, source_results
-        )
-        
+        decision = await self._aggregate_sources(artist_id, artist_name, source_results)
+
         # Store decision in database
         await self._store_decision(decision)
-        
+
         return decision
-    
-    async def _aggregate_sources(self, artist_id: str, artist_name: str,
-                          source_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+
+    async def _aggregate_sources(
+        self,
+        artist_id: str,
+        artist_name: str,
+        source_results: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """Aggregate results from multiple sources.
-        
+
         Args:
             artist_id: Spotify artist ID
             artist_name: Artist name
             source_results: Dict of source results
-            
+
         Returns:
             Aggregated decision dict
         """
@@ -153,29 +169,47 @@ class ArtistClassifier:
         human_votes = 0
         successful_sources = 0
         labels_found = []
-        
+
         for source_name, result in source_results.items():
             if not result.get("success"):
                 continue
-            
+
             successful_sources += 1
             result_label = result.get("result")
-            
+
             if result_label in self.ARTIFICIAL_LABELS:
                 artificial_votes += 1
                 labels_found.append(result_label)
             elif result_label == "human" or result_label == "band":
                 human_votes += 1
-        
+
+        # Always run LLM analysis in parallel for additional insights
+        llm_used = False
+        llm_fallback = None
+        if self.ollama_client:
+            logger.info(f"Running AI analysis for {artist_name}...")
+            try:
+                llm_result = await self.ollama_client.classify(
+                    artist_name, source_results
+                )
+                if llm_result and llm_result.get("output"):
+                    llm_used = True
+                    llm_fallback = llm_result
+                    logger.info(f"✓ AI analysis completed for {artist_name}")
+                else:
+                    logger.warning(
+                        f"✗ AI analysis returned no output for {artist_name}"
+                    )
+            except Exception as e:
+                logger.error(f"AI analysis failed for {artist_name}: {e}")
+
         # Determine decision
         is_artificial = None
         confidence = 0.0
         label = "unknown"
         band_policy_applied = False
-        llm_used = False
-        llm_fallback = None
         reason_parts = []
-        
+
         if artificial_votes >= self.min_source_agreement:
             # Enough sources agree it's artificial
             is_artificial = True
@@ -185,7 +219,24 @@ class ArtistClassifier:
                 f"Classified as artificial: {artificial_votes}/{successful_sources} "
                 f"sources agree. Labels: {', '.join(set(labels_found))}"
             )
-            reason_parts.append(f"Threshold: {self.min_source_agreement} sources required")
+            reason_parts.append(
+                f"Threshold: {self.min_source_agreement} sources required"
+            )
+            # Add AI analysis perspective if available and agrees
+            if llm_used and llm_fallback and llm_fallback.get("output"):
+                llm_output = llm_fallback["output"]
+                llm_is_ai = llm_output.get("is_artificial")
+                if llm_is_ai == True:
+                    reason_parts.append(
+                        f"AI Analysis agrees: {llm_output.get('reason', '')}"
+                    )
+                elif llm_is_ai == False:
+                    reason_parts.append(
+                        f"⚠️ AI Analysis disagrees: classifies as human ({llm_output.get('reason', '')})"
+                    )
+                    confidence = min(
+                        confidence, 0.85
+                    )  # Reduce confidence if AI disagrees
         elif self.band_policy and artificial_votes > 0 and human_votes == 0:
             # Band policy: any virtual/fictional signal = artificial
             is_artificial = True
@@ -196,8 +247,12 @@ class ArtistClassifier:
                 f"Classified as artificial: {artificial_votes}/{successful_sources} "
                 f"sources agree. Labels: {', '.join(set(labels_found))}"
             )
-            reason_parts.append("Band policy applied (any virtual/fictional = artificial)")
-            reason_parts.append(f"Threshold: {self.min_source_agreement} sources required")
+            reason_parts.append(
+                "Band policy applied (any virtual/fictional = artificial)"
+            )
+            reason_parts.append(
+                f"Threshold: {self.min_source_agreement} sources required"
+            )
         elif human_votes >= self.min_source_agreement:
             # Enough sources agree it's human
             is_artificial = False
@@ -206,67 +261,58 @@ class ArtistClassifier:
             reason_parts.append(
                 f"Classified as human: {human_votes}/{successful_sources} sources agree"
             )
-            reason_parts.append(f"Threshold: {self.min_source_agreement} sources required")
-        else:
-            # Inconclusive - try LLM fallback if enabled
-            if self.ollama_client:
-                logger.info(f"Inconclusive result for {artist_name}, trying LLM fallback...")
-                try:
-                    llm_result = await self.ollama_client.classify(artist_name, source_results)
-                    if llm_result and llm_result.get("output"):
-                        llm_used = True
-                        llm_fallback = llm_result
-                        
-                        # Extract classification from LLM output
-                        llm_output = llm_result["output"]
-                        is_artificial = llm_output.get("is_artificial")
-                        confidence = llm_output.get("confidence", 0.5)
-                        label = "llm_" + llm_output.get("label", "unknown")
-                        
-                        reason_parts.append(
-                            f"LLM fallback: {llm_output.get('reason', 'No reasoning provided')}"
-                        )
-                        
-                        # Return immediately with LLM result
-                        cached_until = (
-                            datetime.utcnow() + timedelta(seconds=self.cache_duration)
-                        ).isoformat()
-                        
-                        return {
-                            "decision_id": f"decision_{artist_id}_{datetime.utcnow().isoformat()}",
-                            "artist_id": artist_id,
-                            "artist_name": artist_name,
-                            "label": label,
-                            "is_artificial": is_artificial,
-                            "confidence": confidence,
-                            "sources_agreeing": 0,
-                            "min_required": self.min_source_agreement,
-                            "band_policy_applied": False,
-                            "llm_used": True,
-                            "decision_reason": ". ".join(reason_parts),
-                            "sources": source_results,
-                            "llm_fallback": llm_fallback,
-                            "cached_until": cached_until
-                        }
-                except Exception as e:
-                    logger.error(f"LLM fallback failed: {e}")
-            
-            # Still inconclusive after LLM attempt (or LLM disabled/failed)
             reason_parts.append(
-                f"Inconclusive: {artificial_votes} artificial, {human_votes} human "
-                f"out of {successful_sources} successful sources. "
-                f"Threshold: {self.min_source_agreement} required"
+                f"Threshold: {self.min_source_agreement} sources required"
             )
-            if self.ollama_client and not llm_used:
-                reason_parts.append("LLM fallback also failed or returned inconclusive")
-        
+            # Add AI analysis perspective if available and agrees
+            if llm_used and llm_fallback and llm_fallback.get("output"):
+                llm_output = llm_fallback["output"]
+                llm_is_ai = llm_output.get("is_artificial")
+                if llm_is_ai == False:
+                    reason_parts.append(
+                        f"AI Analysis agrees: {llm_output.get('reason', '')}"
+                    )
+                elif llm_is_ai == True:
+                    reason_parts.append(
+                        f"⚠️ AI Analysis disagrees: classifies as AI/virtual ({llm_output.get('reason', '')})"
+                    )
+                    confidence = min(
+                        confidence, 0.85
+                    )  # Reduce confidence if AI disagrees
+        else:
+            # Inconclusive or unclear
+            # Use LLM result if available, otherwise return inconclusive
+            if llm_used and llm_fallback and llm_fallback.get("output"):
+                llm_output = llm_fallback["output"]
+                is_artificial = llm_output.get("is_artificial")
+                # Cap LLM confidence at 0.75 when used as fallback (sources inconclusive)
+                confidence = min(llm_output.get("confidence", 0.5), 0.75)
+                label = "llm_" + llm_output.get("label", "unknown")
+
+                reason_parts.append(
+                    f"Insufficient source agreement ({artificial_votes} AI vs {human_votes} human "
+                    f"from {successful_sources} sources). Using AI analysis result (confidence capped at 0.75)."
+                )
+                reason_parts.append(
+                    f"AI Analysis: {llm_output.get('reason', 'No reasoning provided')}"
+                )
+            else:
+                # No LLM result available
+                reason_parts.append(
+                    f"Inconclusive: {artificial_votes} artificial, {human_votes} human "
+                    f"out of {successful_sources} successful sources. "
+                    f"Threshold: {self.min_source_agreement} required"
+                )
+                if self.ollama_client:
+                    reason_parts.append("AI analysis unavailable or inconclusive")
+
         decision_reason = ". ".join(reason_parts)
-        
+
         # Cache expiry
         cached_until = (
             datetime.utcnow() + timedelta(seconds=self.cache_duration)
         ).isoformat()
-        
+
         return {
             "decision_id": f"decision_{artist_id}_{datetime.utcnow().isoformat()}",
             "artist_id": artist_id,
@@ -281,12 +327,12 @@ class ArtistClassifier:
             "decision_reason": decision_reason,
             "sources": source_results,
             "llm_fallback": llm_fallback,
-            "cached_until": cached_until
+            "cached_until": cached_until,
         }
-    
+
     async def _store_decision(self, decision: Dict[str, Any]) -> None:
         """Store decision in database.
-        
+
         Args:
             decision: Decision dict
         """
@@ -303,9 +349,9 @@ class ArtistClassifier:
                 band_policy_applied=decision["band_policy_applied"],
                 llm_used=decision["llm_used"],
                 decision_reason=decision["decision_reason"],
-                cached_until=decision["cached_until"]
+                cached_until=decision["cached_until"],
             )
-            
+
             # Insert source results
             for source_name, result in decision["sources"].items():
                 await self.db.insert_source_result(
@@ -315,9 +361,9 @@ class ArtistClassifier:
                     result=result.get("result"),
                     signals=json.dumps(result.get("signals", [])),
                     url=result.get("url"),
-                    query_time_ms=result.get("query_time_ms", 0)
+                    query_time_ms=result.get("query_time_ms", 0),
                 )
-            
+
             # Insert LLM output if used
             if decision.get("llm_used") and decision.get("llm_fallback"):
                 llm_data = decision["llm_fallback"]
@@ -329,22 +375,21 @@ class ArtistClassifier:
                     prompt=llm_data.get("prompt", ""),
                     output=output_json,
                     load_duration_ms=llm_data.get("load_duration_ms", 0),
-                    prompt_eval_count=llm_data.get("prompt_eval_count", 0),
-                    eval_count=llm_data.get("eval_count", 0),
-                    total_duration_ms=llm_data.get("total_duration_ms", 0)
+                    eval_duration_ms=llm_data.get("eval_duration_ms", 0),
+                    total_duration_ms=llm_data.get("total_duration_ms", 0),
                 )
-            
+
             logger.info(f"Stored decision: {decision['decision_id']}")
-            
+
         except Exception as e:
             logger.error(f"Failed to store decision: {e}")
-    
+
     def _decision_from_db(self, db_record: Dict[str, Any]) -> Dict[str, Any]:
         """Convert database record to decision dict.
-        
+
         Args:
             db_record: Database record dict
-            
+
         Returns:
             Decision dict
         """
@@ -353,7 +398,9 @@ class ArtistClassifier:
             "artist_id": db_record["artist_id"],
             "artist_name": "",  # Not stored in decision table
             "label": db_record["label"],
-            "is_artificial": bool(db_record["is_artificial"]) if db_record["is_artificial"] is not None else None,
+            "is_artificial": bool(db_record["is_artificial"])
+            if db_record["is_artificial"] is not None
+            else None,
             "confidence": db_record["confidence"],
             "sources_agreeing": db_record["sources_agreeing"],
             "min_required": db_record["min_required"],
@@ -362,5 +409,5 @@ class ArtistClassifier:
             "decision_reason": db_record["decision_reason"],
             "sources": {},  # Would need to join with sources table
             "llm_fallback": None,
-            "cached_until": db_record["cached_until"]
+            "cached_until": db_record["cached_until"],
         }

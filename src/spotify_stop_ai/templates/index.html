@@ -3,230 +3,409 @@
 {% block title %}Home - Spotify Stop AI{% endblock %}
 
 {% block content %}
-<div id="current-playback">
-    {% if current_track %}
-    <div class="current-playback">
-        <h2>🎵 Now Playing</h2>
-        <div class="track-info">
-            <strong>{{ current_track.track_name }}</strong> by <strong>{{ current_track.artist_name }}</strong>
+<div style="display: grid; grid-template-columns: 1fr; gap: 2rem; margin-bottom: 2rem;">
+    <!-- Rate Limit Status Banner -->
+    <div id="rate-limit-banner" style="display: none; padding: 1rem; background: rgba(255, 71, 87, 0.1); border: 1px solid #ff4757; border-radius: 8px; color: #ff4757;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-weight: 600; font-size: 0.95rem;">⚠️ Rate Limited by Spotify</div>
+                <div id="rate-limit-message" style="font-size: 0.85rem; margin-top: 0.3rem; color: #ffb3b3;">Waiting to retry...</div>
+            </div>
+            <div style="text-align: right;">
+                <div id="rate-limit-countdown" style="font-size: 1.4rem; font-weight: 700;">--</div>
+                <div style="font-size: 0.75rem; color: #ffb3b3;">seconds</div>
+            </div>
         </div>
-        <div class="timestamp">Started: {{ current_track.timestamp }}</div>
-        
-        {% if current_artist_details %}
-        <div class="card" style="margin-top: 1.5rem; padding: 1.5rem;">
-            <h3 style="margin-top: 0;">Classification Results</h3>
-            
-            <!-- Overall Decision -->
-            <div style="margin-bottom: 1.5rem; padding: 1rem; background-color: rgba(29, 185, 84, 0.1); border-left: 4px solid 
-                {% if current_artist_details.is_artificial == 1 %}#e22134{% elif current_artist_details.is_artificial == 0 %}#1db954{% else %}#b3b3b3{% endif %};">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong style="font-size: 1.1rem;">Decision:</strong>
-                        {% if current_artist_details.is_artificial == 1 %}
-                        <span class="badge badge-ai" style="font-size: 1rem; margin-left: 0.5rem;">AI Generated</span>
-                        {% elif current_artist_details.is_artificial == 0 %}
-                        <span class="badge badge-human" style="font-size: 1rem; margin-left: 0.5rem;">Human Artist</span>
-                        {% else %}
-                        <span class="badge badge-unknown" style="font-size: 1rem; margin-left: 0.5rem;">Unknown</span>
-                        {% endif %}
-                        {% if current_artist_details.overridden %}
-                        <span style="color: #1db954; font-size: 0.9rem; margin-left: 0.5rem;" title="Manual override applied">⚠️ Override</span>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div id="current-playback">
+        {% if current_track %}
+        <div style="background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border-radius: 12px; border: 1px solid #242424; overflow: hidden;">
+            <!-- Album Art + Quick Info Section -->
+            <div style="display: grid; grid-template-columns: 160px 1fr; gap: 1.5rem; padding: 1.5rem; align-items: start;">
+                <!-- Album Art Placeholder -->
+                <div id="album-art-container" style="width: 160px; height: 160px; background: #242424; border-radius: 8px; overflow: hidden; flex-shrink: 0; position: relative;">
+                    <img id="album-art" src="" alt="Album Art" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                    <div id="album-art-placeholder" style="width: 100%; height: 100%; background: linear-gradient(135deg, #1ed760 0%, #1db954 100%); display: flex; align-items: center; justify-content: center; font-size: 3rem;">🎵</div>
+                    
+                    <!-- Genres overlay -->
+                    {% if artist_info and artist_info.genres %}
+                    <div style="position: absolute; bottom: 0.5rem; left: 0.5rem; right: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.3rem;">
+                        {% for genre in artist_info.genres[:2] %}
+                        <span style="background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(10px); color: #1ed760; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.65rem; font-weight: 600; border: 1px solid rgba(30, 215, 96, 0.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ genre|capitalize }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Track Info -->
+                <div>
+                    <h2 style="margin: 0 0 0.5rem 0; color: #e0e0e0; font-size: 1.4rem;">{{ current_track.track_name }}</h2>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin: 0 0 1rem 0;">
+                        <p style="margin: 0; color: #1ed760; font-weight: 600; font-size: 1rem;">{{ current_track.artist_name }}</p>
+                        {% if artist_is_saved %}
+                        <span title="In Your Favorites" style="color: #ffd700; font-size: 0.9rem; font-weight: bold;">⭐</span>
                         {% endif %}
                     </div>
-                    <div>
-                        <strong>Confidence:</strong> 
-                        <span style="font-size: 1.1rem;">{{ "%.0f"|format(current_artist_details.confidence * 100) }}%</span>
+                    <p style="margin: 0; color: #888888; font-size: 0.9rem;">Playing since {{ current_track.timestamp }}</p>
+                    
+                    <!-- Playback Controls - Compact Row -->
+                    <div style="display: flex; gap: 0.8rem; margin-top: 1.2rem; flex-wrap: wrap;">
+                        <button id="btn-play-pause" class="btn-icon" title="Play/Pause" onclick="togglePlayPause()">▶️</button>
+                        <button id="btn-prev" class="btn-icon" title="Previous Track" onclick="previousTrack()">⏮️</button>
+                        <button id="btn-next" class="btn-icon" title="Next Track" onclick="nextTrack()">⏭️</button>
+                        <button id="btn-video" class="btn-icon" title="Open Video/Episode" onclick="openVideo()" style="display: none;">📹</button>
+                        <button id="btn-shuffle" class="btn-icon" title="Shuffle" onclick="toggleShuffle()">🔀</button>
+                        <button id="btn-like" class="btn-icon" title="Like Track" onclick="toggleLike()">🤍</button>
                     </div>
                 </div>
-                {% if current_artist_details.label %}
-                <div style="margin-top: 0.5rem;">
-                    <strong>Label:</strong> <span style="text-transform: capitalize;">{{ current_artist_details.label.replace('_', ' ') }}</span>
-                </div>
-                {% endif %}
-                {% if current_artist_details.overridden and current_artist_details.override_reason %}
-                <div style="margin-top: 0.5rem; color: #b3b3b3;">
-                    <strong>Override Reason:</strong> {{ current_artist_details.override_reason }}
-                </div>
-                {% endif %}
             </div>
             
-            <!-- Source Results -->
-            {% if current_artist_details.sources %}
-            <h4 style="margin-top: 1.5rem; margin-bottom: 1rem;">Source Results:</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-                {% for source in current_artist_details.sources %}
-                <div style="padding: 1rem; border: 2px solid 
-                    {% if source.is_artificial == 1 %}#e22134{% elif source.is_artificial == 0 %}#1db954{% else %}#b3b3b3{% endif %}; 
-                    border-radius: 8px; background-color: rgba(
-                    {% if source.is_artificial == 1 %}226, 33, 52{% elif source.is_artificial == 0 %}29, 185, 84{% else %}179, 179, 179{% endif %}, 0.05);">
-                    <div style="font-weight: bold; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; color: #b3b3b3;">
-                        {{ source.source_name }}
-                    </div>
-                    <div style="margin-bottom: 0.5rem;">
-                        {% if source.is_artificial == 1 %}
-                        <span class="badge badge-ai">AI</span>
-                        {% elif source.is_artificial == 0 %}
-                        <span class="badge badge-human">Human</span>
+            <!-- AI Classification Badge - Fixed Position -->
+            <div style="position: absolute; top: 1rem; right: 1.5rem;" id="status-badge-container"></div>
+        </div>
+    <!-- Classification Results -->
+    {% if current_artist_details %}
+    <div style="padding: 1.5rem; border-top: 1px solid #242424;">
+        <!-- Overall Decision - Compact -->
+        <div id="decision-result" style="padding: 1rem; border-radius: 6px; margin-bottom: 1rem; background: rgba(30, 215, 96, 0.08); border-left: 3px solid #1ed760; cursor: pointer;" onclick="toggleSection('classification-details')" title="Click to expand classification details">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="color: #888888; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 0.5rem;">Classification:</span>
+                    <span style="font-size: 1rem; font-weight: 700; color: #1ed760;">
+                        {% if current_artist_details.is_artificial == 1 %}
+                        ⚠️ AI Generated
+                        {% elif current_artist_details.is_artificial == 0 %}
+                        ✓ Human Artist
                         {% else %}
-                        <span class="badge badge-unknown">Unknown</span>
+                        ❓ Unknown/Pending
                         {% endif %}
-                        <span style="margin-left: 0.5rem;">{{ "%.0f"|format(source.confidence * 100) }}%</span>
-                    </div>
-                    {% if source.label %}
-                    <div style="font-size: 0.85rem; color: #b3b3b3;">
-                        Label: <span style="text-transform: capitalize;">{{ source.label.replace('_', ' ') }}</span>
-                    </div>
+                    </span>
+                    {% if current_artist_details.overridden %}
+                    <span style="color: #ffa500; font-size: 0.85rem; margin-left: 0.5rem;">⚠️ Override</span>
                     {% endif %}
-                    {% if source.tags %}
-                    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #b3b3b3;">
-                        Tags: {{ source.tags[:3]|join(', ') }}{% if source.tags|length > 3 %}...{% endif %}
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: #1ed760;">{{ "%.0f"|format(current_artist_details.confidence * 100) }}%</div>
+                        <div style="color: #666666; font-size: 0.75rem;">confidence</div>
                     </div>
+                    <span style="color: #888888; font-size: 1.2rem;">▼</span>
+                </div>
+            </div>
+            
+            <!-- Artist Metrics -->
+            {% if artist_info %}
+            <div style="display: flex; gap: 2rem; font-size: 0.9rem; color: #888888; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #242424;">
+                <div>
+                    <div style="color: #1ed760; font-weight: 600;">{{ artist_info.popularity }}%</div>
+                    <div style="font-size: 0.8rem;">Popularity</div>
+                </div>
+                <div>
+                    <div style="color: #1ed760; font-weight: 600;">{{ "{:,}".format(artist_info.followers.total) }}</div>
+                    <div style="font-size: 0.8rem;">Followers</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Expandable Classification Details -->
+        <div id="classification-details" style="display: block; margin-bottom: 1rem;">
+        
+        <!-- Source Results Grid - Compact -->
+        <div style="margin-bottom: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
+                {% for source in current_artist_details.sources %}
+                
+                {# Handle old string format from database first #}
+                {% if source.result is string %}
+                    {% if source.result == 'human' %}
+                        {% set is_ai = false %}
+                        {% set success = true %}
+                        {% set conf = 1.0 %}
+                        {% set query_time = source.query_time_ms if source.query_time_ms else 'N/A' %}
+                        {% set result = {} %}
+                    {% elif source.result == 'ai' %}
+                        {% set is_ai = true %}
+                        {% set success = true %}
+                        {% set conf = 1.0 %}
+                        {% set query_time = source.query_time_ms if source.query_time_ms else 'N/A' %}
+                        {% set result = {} %}
+                    {% else %}
+                        {# Empty string or other string - no data #}
+                        {% set is_ai = none %}
+                        {% set success = false %}
+                        {% set conf = 0 %}
+                        {% set query_time = 'N/A' %}
+                        {% set result = {} %}
                     {% endif %}
+                {% else %}
+                    {# New JSON format #}
+                    {% set result = source.result if source.result is mapping else {} %}
+                    {% set is_ai = result.get('is_artificial') if result else none %}
+                    {% set conf = result.get('confidence', 0.0) if result else 0.0 %}
+                    {% set query_time = result.get('query_time_ms', 'N/A') if result else 'N/A' %}
+                    {% set success = result.get('success', False) if result else false %}
+                {% endif %}
+                
+                <div class="source-card" style="padding: 0.8rem; border: 1px solid 
+                    {% if is_ai == true %}#ff4757{% elif is_ai == false %}#1ed760{% elif success %}#ffa500{% else %}#333333{% endif %}; 
+                    border-radius: 4px; background: rgba(
+                    {% if is_ai == true %}255, 71, 87{% elif is_ai == false %}30, 215, 96{% elif success %}255, 165, 0{% else %}51, 51, 51{% endif %}, 0.06); cursor: pointer; transition: all 0.2s;"
+                    onclick="toggleSourceDetail('source-{{ loop.index }}')"
+                    title="Click for details">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">
+                                {{ source.source_name }}
+                            </div>
+                            {% if query_time != 'N/A' %}
+                            <div style="font-size: 0.7rem; color: #666666;">{{ query_time }}ms</div>
+                            {% endif %}
+                        </div>
+                        
+                        {% if success %}
+                        <div style="font-size: 0.85rem; font-weight: 600;">
+                            {% if is_ai == true %}
+                            <span style="color: #ff4757;">⚠️ AI</span>
+                            {% elif is_ai == false %}
+                            <span style="color: #1ed760;">✓ Human</span>
+                            {% else %}
+                            <span style="color: #888888;">❓</span>
+                            {% endif %}
+                            {% if conf > 0 %}
+                            <span style="color: #888888; font-size: 0.8rem; margin-left: 0.3rem;">{{ "%.0f"|format(conf * 100) }}%</span>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Hidden details -->
+                        <div id="source-{{ loop.index }}" style="display: none; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #242424; font-size: 0.8rem;">
+                            {% set lbl = result.get('label', '') %}
+                            {% if lbl %}
+                            <div style="color: #888888; margin-bottom: 0.5rem;">
+                                <strong>Label:</strong> <span style="text-transform: capitalize;">{{ lbl.replace('_', ' ') }}</span>
+                            </div>
+                            {% endif %}
+                            
+                            {% if result.get('tags') %}
+                            <div style="color: #888888;">
+                                <strong>Tags:</strong> 
+                                {% if result['tags'] is iterable and result['tags'] is not string %}
+                                    {% set tag_list = [] %}
+                                    {% for tag in result['tags'][:3] %}
+                                        {% if tag is string %}
+                                            {% set _ = tag_list.append(tag) %}
+                                        {% elif tag.name is defined %}
+                                            {% set _ = tag_list.append(tag.name) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {{ tag_list|join(', ') }}{% if result['tags']|length > 3 %} +{{ result['tags']|length - 3 }}{% endif %}
+                                {% elif result['tags'] %}
+                                    {{ result['tags'][:3]|join(', ') }}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div style="color: #666666; font-size: 0.8rem;">Not available</div>
+                        <!-- Expanded no-data details -->
+                        <div id="source-{{ loop.index }}" style="display: none; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #242424; font-size: 0.8rem;">
+                            <div style="color: #888888; line-height: 1.4;">
+                                {% if source.source_name == 'wikidata' %}
+                                    Artist not found in Wikidata database
+                                {% elif source.source_name == 'musicbrainz' %}
+                                    Artist not found in MusicBrainz database
+                                {% elif source.source_name == 'lastfm' %}
+                                    Artist not found in Last.fm database
+                                {% else %}
+                                    No classification data available
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
                 </div>
                 {% endfor %}
             </div>
-            {% endif %}
-            
-            <!-- LLM Fallback Analysis -->
-            {% if current_artist_details.llm_output %}
-            <div style="margin-top: 1.5rem; padding: 1rem; border: 2px solid #ffa500; border-radius: 8px; background-color: rgba(255, 165, 0, 0.05);">
-                <h4 style="margin-top: 0; color: #ffa500;">🤖 LLM Analysis</h4>
-                <div style="margin-bottom: 0.5rem;">
-                    <strong>Model:</strong> {{ current_artist_details.llm_output.model }}
-                </div>
-                {% if current_artist_details.llm_output.output %}
-                <div style="margin-bottom: 0.5rem;">
-                    <strong>Result:</strong>
-                    {% if current_artist_details.llm_output.output.is_artificial == True %}
-                    <span class="badge badge-ai">AI</span>
-                    {% elif current_artist_details.llm_output.output.is_artificial == False %}
-                    <span class="badge badge-human">Human</span>
-                    {% else %}
-                    <span class="badge badge-unknown">Unknown</span>
-                    {% endif %}
-                    <span style="margin-left: 0.5rem;">{{ "%.0f"|format(current_artist_details.llm_output.output.confidence * 100) }}%</span>
-                </div>
-                {% if current_artist_details.llm_output.output.reason %}
-                <div style="margin-top: 0.5rem; padding: 0.5rem; background-color: rgba(0, 0, 0, 0.2); border-radius: 4px; font-size: 0.9rem;">
-                    {{ current_artist_details.llm_output.output.reason }}
-                </div>
-                {% endif %}
-                {% endif %}
-            </div>
-            {% endif %}
-            
-            <div style="margin-top: 1.5rem;">
-                <a href="/artist/{{ current_track.artist_id }}" class="btn">Full Details & History</a>
-            </div>
         </div>
-        {% elif current_track.artist_id %}
-        <div style="margin-top: 1rem;">
-            <a href="/artist/{{ current_track.artist_id }}" class="btn">View Artist Details</a>
+            
+        <!-- LLM Analysis Card - Always Show - Full Width -->
+            <div class="source-card" style="padding: 1rem; border: 1px solid #ffa500; border-radius: 4px; background: rgba(255, 165, 0, 0.06); cursor: pointer; transition: all 0.2s; margin-top: 0.8rem;" onclick="toggleSourceDetail('source-llm')" title="Click for AI analysis with web search">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">🤖 AI Analysis</div>
+                        {% if current_artist_details.llm_output and current_artist_details.llm_output.total_duration_ms %}
+                        <div style="font-size: 0.7rem; color: #666666;">{{ current_artist_details.llm_output.total_duration_ms }}ms</div>
+                        {% endif %}
+                    </div>
+                    
+                    {% if current_artist_details.llm_output and current_artist_details.llm_output.output %}
+                        {% set llm_output = current_artist_details.llm_output.output %}
+                        <div style="font-size: 0.85rem; font-weight: 600;">
+                            {% if llm_output.is_artificial == true %}
+                            <span style="color: #ff4757;">⚠️ AI Generated</span>
+                            {% elif llm_output.is_artificial == false %}
+                            <span style="color: #1ed760;">✓ Human</span>
+                            {% else %}
+                            <span style="color: #888888;">❓ Unclear</span>
+                            {% endif %}
+                            {% if llm_output.confidence is defined and llm_output.confidence > 0 %}
+                            <span style="color: #888888; font-size: 0.8rem; margin-left: 0.3rem;">{{ "%.0f"|format(llm_output.confidence * 100) }}%</span>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Hidden LLM details -->
+                        <div id="source-llm" style="display: none; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #242424; font-size: 0.8rem;">
+                            <div style="color: #ffa500; font-weight: 600; margin-bottom: 0.5rem;">{{ current_artist_details.llm_output.model }}</div>
+                            {% if llm_output.reason %}
+                            <div style="color: #888888; line-height: 1.4;">
+                                {{ llm_output.reason }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <div style="color: #666666; font-size: 0.8rem;">Not run yet</div>
+                        <!-- Empty details -->
+                        <div id="source-llm" style="display: none; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #242424; font-size: 0.8rem;">
+                            <div style="color: #888888; line-height: 1.4;">LLM analysis will run if sources are inconclusive.</div>
+                        </div>
+                    {% endif %}
+            </div>
+        
+        {% if current_artist_details.is_artificial is none %}
+        <div style="padding: 1rem; border-radius: 6px; background: rgba(136, 136, 136, 0.06); border-left: 3px solid #666666; text-align: center;">
+            <div style="color: #888888; font-size: 0.9rem;">⏳ Classification in progress...</div>
+            <div style="color: #666666; font-size: 0.8rem; margin-top: 0.3rem;">Checking multiple sources and AI analysis</div>
+        </div>
+        {% elif current_artist_details.sources and not (current_artist_details.llm_output and current_artist_details.llm_output.output) %}
+        <div style="padding: 0.8rem; border-radius: 4px; background: rgba(30, 215, 96, 0.06); border-left: 3px solid #1ed760; margin-top: 1rem;">
+            <div style="color: #1ed760; font-size: 0.85rem; font-weight: 600;">✓ Classification from verified sources</div>
+            <div style="color: #888888; font-size: 0.8rem; margin-top: 0.3rem;">Result based on Wikidata, MusicBrainz, and Last.fm data</div>
         </div>
         {% endif %}
+        
+        </div>
+        
+        <div style="margin-top: 1rem; text-align: center;">
+            <a href="/artist/{{ current_track.artist_id }}" class="btn btn-secondary" style="font-size: 0.9rem; padding: 0.5rem 1rem;">View Full History</a>
+        </div>
+    </div>
+    {% else %}
+    <div style="padding: 1.5rem; text-align: center; border-top: 1px solid #242424;">
+        <div style="color: #666666; font-size: 0.9rem;">
+            ⏳ Analyzing artist... Please wait
+        </div>
+    </div>
+    {% endif %}
     </div>
     {% else %}
     <div class="card">
         <h2>🎵 Now Playing</h2>
-        <p style="color: #b3b3b3;">No track currently playing</p>
+        <p style="color: #888888;">No track currently playing</p>
     </div>
     {% endif %}
 </div>
 
+<!-- Right Sidebar - Moved below main content -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <!-- Artist Info Card -->
+    {% if artist_info %}
+    <div class="card" style="padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <h4 style="margin: 0; color: #1ed760; font-size: 0.95rem;">👤 {{ current_track.artist_name[:20] }}</h4>
+                {% if artist_is_saved %}
+                <span title="In Your Favorites" style="color: #ffd700; font-size: 1rem; font-weight: bold;">⭐</span>
+                {% endif %}
+            </div>
+            <a href="{{ artist_info.external_urls.spotify }}" target="_blank" class="btn" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">🎵</a>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Playlists Card -->
+    {% if user_playlists %}
+    <div class="card" style="padding: 1.5rem;">
+        <h4 style="margin: 0 0 1rem 0; color: #1ed760;">🎶 Playlists</h4>
+        <div style="display: flex; flex-direction: column; gap: 0.8rem; max-height: 300px; overflow-y: auto;">
+            {% for playlist in user_playlists[:8] %}
+            <a href="{{ playlist.external_urls.spotify }}" target="_blank" style="padding: 0.6rem; background: #0f0f0f; border: 1px solid #242424; border-radius: 4px; color: #e0e0e0; text-decoration: none; font-size: 0.85rem; transition: all 0.2s; display: flex; align-items: center; gap: 0.8rem;">
+                {% if playlist.images %}
+                <img src="{{ playlist.images[0].url }}" alt="" style="width: 32px; height: 32px; border-radius: 3px; object-fit: cover;">
+                {% else %}
+                <div style="width: 32px; height: 32px; background: #242424; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem;">🎵</div>
+                {% endif %}
+                <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ playlist.name }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Activity Grid -->
 <div class="grid">
     <div class="card">
-        <h2>📊 Recent Plays</h2>
+        <h3 style="margin-top: 0;">📊 Recent Plays</h3>
         {% if plays %}
         <table>
             <thead>
                 <tr>
                     <th>Artist</th>
                     <th>Track</th>
-                    <th>Time</th>
+                    <th>When</th>
                 </tr>
             </thead>
             <tbody>
-                {% for play in plays[:5] %}
+                {% for play in plays[:8] %}
                 <tr>
                     <td>
                         <a href="/artist/{{ play.artist_id }}">{{ play.artist_name or 'Unknown' }}</a>
                     </td>
-                    <td>{{ play.track_name or 'Unknown' }}</td>
+                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ play.track_name or 'Unknown' }}</td>
                     <td class="timestamp">{{ play.timestamp }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        <div style="margin-top: 1rem;">
-            <a href="/plays" class="btn btn-secondary">View All Plays</a>
-        </div>
+        <a href="/plays" class="btn btn-secondary" style="margin-top: 1rem; display: inline-block;">View All</a>
         {% else %}
-        <p style="color: #b3b3b3;">No plays recorded yet</p>
+        <p style="color: #888888;">No plays recorded yet</p>
         {% endif %}
     </div>
     
     <div class="card">
-        <h2>🤖 Recent Decisions</h2>
+        <h3 style="margin-top: 0;">🤖 Recent Decisions</h3>
         {% if decisions %}
         <table>
             <thead>
                 <tr>
                     <th>Artist</th>
                     <th>Result</th>
-                    <th>Confidence</th>
-                    <th>Actions</th>
+                    <th>Conf.</th>
                 </tr>
             </thead>
             <tbody>
-                {% for decision in decisions[:5] %}
+                {% for decision in decisions[:8] %}
                 <tr>
                     <td>
                         <a href="/artist/{{ decision.artist_id }}">{{ decision.artist_name or 'Unknown' }}</a>
                     </td>
                     <td>
                         {% if decision.is_artificial == 1 %}
-                        <span class="badge badge-ai">AI Generated</span>
+                        <span class="badge badge-ai">AI</span>
                         {% elif decision.is_artificial == 0 %}
                         <span class="badge badge-human">Human</span>
                         {% else %}
-                        <span class="badge badge-unknown">Unknown</span>
-                        {% endif %}
-                        {% if decision.overridden %}
-                        <span style="color: #1db954; font-size: 0.75rem; margin-left: 0.5rem;" title="Manual override applied">⚠️</span>
-                        {% endif %}
-                        {% if decision.context_count %}
-                        <span style="color: #b3b3b3; font-size: 0.8rem; margin-left: 0.5rem;" title="Checked {{ decision.context_count }} sources">
-                            ({{ decision.context_count }} sources)
-                        </span>
+                        <span class="badge badge-unknown">?</span>
                         {% endif %}
                     </td>
                     <td class="confidence">{{ "%.0f"|format(decision.confidence * 100) }}%</td>
-                    <td>
-                        <a href="/artist/{{ decision.artist_id }}" class="btn" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Details</a>
-                        {% if decision.is_artificial != 1 %}
-                        <form method="post" action="/override/{{ decision.artist_id }}" style="display: inline;">
-                            <input type="hidden" name="is_artificial" value="true">
-                            <input type="hidden" name="reason" value="Manual override from dashboard">
-                            <button type="submit" class="btn btn-danger" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Mark AI</button>
-                        </form>
-                        {% endif %}
-                        {% if decision.is_artificial != 0 %}
-                        <form method="post" action="/override/{{ decision.artist_id }}" style="display: inline;">
-                            <input type="hidden" name="is_artificial" value="false">
-                            <input type="hidden" name="reason" value="Manual override from dashboard">
-                            <button type="submit" class="btn" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Mark Human</button>
-                        </form>
-                        {% endif %}
-                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        <div style="margin-top: 1rem;">
-            <a href="/decisions" class="btn btn-secondary">View All Decisions</a>
-        </div>
+        <a href="/decisions" class="btn btn-secondary" style="margin-top: 1rem; display: inline-block;">View All</a>
         {% else %}
-        <p style="color: #b3b3b3;">No decisions recorded yet</p>
+        <p style="color: #888888;">No decisions recorded yet</p>
         {% endif %}
     </div>
 </div>
@@ -234,34 +413,276 @@
 
 {% block extra_script %}
 <script>
-    // Auto-refresh current playback every 5 seconds
+    // Toggle expandable sections
+    function toggleSection(sectionId) {
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+        
+        if (section.style.display === 'none' || section.style.display === '') {
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+        }
+    }
+    
+    function toggleSourceDetail(sourceId) {
+        const detail = document.getElementById(sourceId);
+        if (!detail) return;
+        
+        event.stopPropagation(); // Prevent parent click
+        
+        if (detail.style.display === 'none' || detail.style.display === '') {
+            detail.style.display = 'block';
+        } else {
+            detail.style.display = 'none';
+        }
+    }
+    
+    // Playback control functions
+    async function togglePlayPause() {
+        try {
+            const response = await fetch('/api/playback/toggle', { method: 'POST' });
+            if (response.ok) updatePlaybackStatus();
+        } catch (err) { console.error('Toggle play/pause failed:', err); }
+    }
+    
+    async function nextTrack() {
+        try {
+            const response = await fetch('/api/playback/next', { method: 'POST' });
+            if (response.ok) {
+                setTimeout(() => location.reload(), 500);
+            }
+        } catch (err) { console.error('Next track failed:', err); }
+    }
+    
+    async function previousTrack() {
+        try {
+            const response = await fetch('/api/playback/previous', { method: 'POST' });
+            if (response.ok) {
+                setTimeout(() => location.reload(), 500);
+            }
+        } catch (err) { console.error('Previous track failed:', err); }
+    }
+    
+    async function toggleShuffle() {
+        try {
+            const response = await fetch('/api/playback/shuffle/toggle', { method: 'POST' });
+            if (response.ok) updatePlaybackStatus();
+        } catch (err) { console.error('Toggle shuffle failed:', err); }
+    }
+    
+    async function toggleLike() {
+        try {
+            const response = await fetch('/api/track/like/toggle', { method: 'POST' });
+            if (response.ok) updatePlaybackStatus();
+        } catch (err) { console.error('Toggle like failed:', err); }
+    }
+    
+    let currentTrackUri = '';
+    
+    async function openVideo() {
+        if (currentTrackUri) {
+            // Convert Spotify URI to Web URL: spotify:track:123 -> https://open.spotify.com/track/123
+            const parts = currentTrackUri.split(':');
+            if (parts.length >= 3) {
+                const type = parts[1]; // 'track', 'episode', 'show', etc.
+                const id = parts[2];
+                const spotifyWebUrl = `https://open.spotify.com/${type}/${id}`;
+                window.open(spotifyWebUrl, '_blank');
+            } else {
+                // Fallback: just open the URI
+                window.open(currentTrackUri, '_blank');
+            }
+        }
+    }
+    
+    async function updatePlaybackStatus() {
+        try {
+            const response = await fetch('/api/playback/status');
+            const data = await response.json();
+            
+            // Update button states
+            const playBtn = document.getElementById('btn-play-pause');
+            const shuffleBtn = document.getElementById('btn-shuffle');
+            const likeBtn = document.getElementById('btn-like');
+            const videoBtn = document.getElementById('btn-video');
+            
+            if (data.is_playing) {
+                playBtn.textContent = '⏸️';
+                playBtn.classList.add('active');
+            } else {
+                playBtn.textContent = '▶️';
+                playBtn.classList.remove('active');
+            }
+            
+            if (data.is_shuffled) {
+                shuffleBtn.classList.add('active');
+            } else {
+                shuffleBtn.classList.remove('active');
+            }
+            
+            if (data.is_liked) {
+                likeBtn.textContent = '❤️';
+                likeBtn.classList.add('active');
+            } else {
+                likeBtn.textContent = '🤍';
+                likeBtn.classList.remove('active');
+            }
+            
+            // Show video button for all tracks (episodes, shows, and tracks with music videos)
+            if (videoBtn && data.track_uri) {
+                currentTrackUri = data.track_uri;
+                videoBtn.style.display = 'inline-block';
+            }
+        } catch (err) { console.error('Update status failed:', err); }
+    }
+    
+    // Track current playback for auto-refresh
+    let lastTrackUri = '{{ current_track.uri if current_track else "" }}';
+    
+    function updateArtistInfo(data) {
+        // Update artist info sidebar
+        const artistInfo = data.artist_info;
+        const playlists = data.user_playlists;
+        
+        if (!artistInfo && !playlists) return;
+        
+        // For now, we'll just update the page if track changes
+        // A full update would require rebuilding the sidebar dynamically
+    }
+    
+    function updateCurrentPlayback(data) {
+        const container = document.getElementById('current-playback');
+        if (!data.current_track) {
+            container.innerHTML = `
+                <div class="card">
+                    <h2>🎵 Now Playing</h2>
+                    <p style="color: #888888;">No track currently playing</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const track = data.current_track;
+        const details = data.current_artist_details;
+        
+        // Detect track change and reload full page
+        if (track.uri && track.uri !== lastTrackUri) {
+            lastTrackUri = track.uri;
+            location.reload();
+            return;
+        }
+        
+        // Update album art if available
+        if (track.album_image) {
+            const artImg = document.getElementById('album-art');
+            const artPlaceholder = document.getElementById('album-art-placeholder');
+            if (artImg && artPlaceholder) {
+                artImg.src = track.album_image;
+                artImg.onload = function() {
+                    artImg.style.display = 'block';
+                    artPlaceholder.style.display = 'none';
+                };
+            }
+        }
+        
+        // Update status badge
+        const badgeContainer = document.getElementById('status-badge-container');
+        if (badgeContainer && details) {
+            const color = details.is_artificial == 1 ? '#ff4757' : details.is_artificial == 0 ? '#1ed760' : '#888888';
+            const text = details.is_artificial == 1 ? '⚠️ AI' : details.is_artificial == 0 ? '✓ Human' : '❓ Unknown';
+            badgeContainer.innerHTML = `
+                <div style="padding: 0.6rem 1rem; background: rgba(${color.slice(1)}, 0.1); border: 1px solid ${color}; border-radius: 20px; color: ${color}; font-weight: 600; font-size: 0.85rem;">
+                    ${text}
+                </div>
+            `;
+        }
+        
+        // Update button states
+        updatePlaybackStatus();
+        
+        // Update artist info if changed
+        updateArtistInfo(data);
+    }
+    
+    // Auto-refresh every 2 seconds
+    // Poll for updates - faster when analyzing
+    let isAnalyzing = {{ 'true' if not current_artist_details else 'false' }};
+    let rateLimitStatusInterval = null;
+    
+    async function updateMonitorStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const status = await response.json();
+            const rateLimitBanner = document.getElementById('rate-limit-banner');
+            
+            if (status.rate_limit.is_rate_limited) {
+                rateLimitBanner.style.display = 'block';
+                if (status.rate_limit.retry_in_seconds !== null) {
+                    document.getElementById('rate-limit-countdown').textContent = 
+                        Math.ceil(status.rate_limit.retry_in_seconds);
+                    document.getElementById('rate-limit-message').textContent = 
+                        `Spotify API rate limited. Retrying in ${Math.ceil(status.rate_limit.retry_in_seconds)}s...`;
+                }
+            } else {
+                rateLimitBanner.style.display = 'none';
+            }
+        } catch (err) { 
+            console.error('Failed to update monitor status:', err); 
+        }
+    }
+    
+    // Start countdown timer when rate limited
+    function startRateLimitCountdown() {
+        if (rateLimitStatusInterval) clearInterval(rateLimitStatusInterval);
+        
+        rateLimitStatusInterval = setInterval(async () => {
+            await updateMonitorStatus();
+        }, 1000);
+    }
+    
+    // Stop countdown timer
+    function stopRateLimitCountdown() {
+        if (rateLimitStatusInterval) {
+            clearInterval(rateLimitStatusInterval);
+            rateLimitStatusInterval = null;
+        }
+    }
+    
+    // Check rate limit status every few seconds
+    setInterval(async () => {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        
+        if (status.rate_limit.is_rate_limited) {
+            startRateLimitCountdown();
+        } else {
+            stopRateLimitCountdown();
+            document.getElementById('rate-limit-banner').style.display = 'none';
+        }
+    }, 5000);
+    
     setInterval(async () => {
         try {
             const response = await fetch('/api/current');
             const data = await response.json();
             
-            if (data.current_track) {
-                const currentDiv = document.getElementById('current-playback');
-                const currentTrack = data.current_track;
-                
-                currentDiv.innerHTML = `
-                    <div class="current-playback">
-                        <h2>🎵 Now Playing</h2>
-                        <div class="track-info">
-                            <strong>${currentTrack.track_name}</strong> by <strong>${currentTrack.artist_name}</strong>
-                        </div>
-                        <div class="timestamp">Started: ${currentTrack.timestamp}</div>
-                        ${currentTrack.artist_id ? `
-                        <div style="margin-top: 1rem;">
-                            <a href="/artist/${currentTrack.artist_id}" class="btn">View Artist Details</a>
-                        </div>
-                        ` : ''}
-                    </div>
-                `;
+            // If artist details just became available, reload page to get full details
+            if (isAnalyzing && data.current_artist_details) {
+                isAnalyzing = false;
+                location.reload();
+                return;
             }
-        } catch (error) {
-            console.error('Failed to refresh playback:', error);
-        }
-    }, 5000);
+            
+            isAnalyzing = !data.current_artist_details;
+            updateCurrentPlayback(data);
+        } catch (err) { console.error('Refresh failed:', err); }
+    }, isAnalyzing ? 1000 : 2000);
+    
+    // Initial load
+    document.addEventListener('DOMContentLoaded', function() {
+        updatePlaybackStatus();
+        updateMonitorStatus();
+    });
 </script>
 {% endblock %}

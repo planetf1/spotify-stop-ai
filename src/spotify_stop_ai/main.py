@@ -1,4 +1,5 @@
 """Main entry point for Spotify Stop AI."""
+
 import asyncio
 import logging
 import sys
@@ -16,49 +17,53 @@ from spotify_stop_ai.api import run_api
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
 
 # Suppress Spotipy's noisy error logs for expected 404s (algorithmic playlists, etc.)
 class SpotipyErrorFilter(logging.Filter):
     """Filter out expected 404 errors from Spotipy."""
+
     def filter(self, record):
         if record.levelno == logging.ERROR:
             # Suppress 404 errors for playlist fetches (these are expected)
-            if "returned 404" in record.getMessage() and "playlists" in record.getMessage():
+            if (
+                "returned 404" in record.getMessage()
+                and "playlists" in record.getMessage()
+            ):
                 return False
         return True
 
-spotipy_logger = logging.getLogger('spotipy.client')
+
+spotipy_logger = logging.getLogger("spotipy.client")
 spotipy_logger.addFilter(SpotipyErrorFilter())
 logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load configuration from YAML file.
-    
+
     Args:
         config_path: Path to config file
-        
+
     Returns:
         Configuration dict
     """
     # Load environment variables
     load_dotenv()
-    
+
     # Load config file
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
         logger.info("Please copy config.example.yaml to config.yaml and configure it")
         sys.exit(1)
-    
-    with open(config_path, 'r') as f:
+
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
-    
+
     # Replace environment variable placeholders
     def replace_env_vars(obj):
         """Recursively replace ${VAR} with environment variables."""
@@ -74,42 +79,42 @@ def load_config(config_path: str = "config.yaml") -> dict:
             return value
         else:
             return obj
-    
+
     config = replace_env_vars(config)
-    
+
     return config
 
 
 async def main():
     """Main entry point."""
     logger.info("Starting Spotify Stop AI...")
-    
+
     # Load configuration
     config = load_config()
-    
+
     # Set log level from config
     log_level = config.get("logging", {}).get("level", "INFO")
     logging.getLogger().setLevel(getattr(logging, log_level))
-    
+
     # Initialize database
     db_path = config["database"]["path"]
     logger.info(f"Initializing database: {db_path}")
     database = Database(db_path)
     await database.initialize()
-    
+
     # Initialize Spotify client
     logger.info("Initializing Spotify client...")
     spotify_client = SpotifyClient(
         client_id=config["spotify"]["client_id"],
         redirect_uri=config["spotify"]["redirect_uri"],
-        cache_path=config["spotify"]["cache_path"]
+        cache_path=config["spotify"]["cache_path"],
     )
-    
+
     # Authenticate
     if not spotify_client.authenticate():
         logger.error("Spotify authentication failed")
         sys.exit(1)
-    
+
     # Check for active devices
     devices = spotify_client.get_devices()
     if not devices or not devices.get("devices"):
@@ -125,29 +130,29 @@ async def main():
             logger.info(
                 f"Available devices: {', '.join(d['name'] for d in devices['devices'])}"
             )
-    
+
     # Initialize classifier
     logger.info("Initializing classifier...")
     classifier = ArtistClassifier(config, database)
-    
+
     # Initialize monitor
     logger.info("Initializing playback monitor...")
     monitor = PlaybackMonitor(spotify_client, classifier, database, config)
-    
+
     # Get server configuration
     api_host = config["api"]["host"]
     api_port = config["api"]["port"]
     web_ui_host = config["api"]["host"]
     web_ui_port = config.get("web_ui", {}).get("port", 8890)
-    
+
     # Start servers if enabled
     servers = []
-    
+
     if config.get("api", {}).get("enabled", True):
         import uvicorn
         from spotify_stop_ai.api import create_api
         from spotify_stop_ai.web_ui import create_web_ui
-        
+
         # Create API server
         logger.info("Starting review API...")
         api = create_api(database, classifier)
@@ -156,7 +161,7 @@ async def main():
         )
         api_server = uvicorn.Server(api_config)
         servers.append(("API", api_server, f"http://{api_host}:{api_port}/docs"))
-        
+
         # Create Web UI server
         logger.info("Starting web UI...")
         web_ui = create_web_ui(database, classifier, spotify_client, monitor)
@@ -165,7 +170,7 @@ async def main():
         )
         web_ui_server = uvicorn.Server(web_ui_config)
         servers.append(("Web UI", web_ui_server, f"http://{web_ui_host}:{web_ui_port}"))
-        
+
         # Start all servers concurrently
         async def run_servers():
             """Run all servers concurrently."""
@@ -173,25 +178,25 @@ async def main():
             for name, server, url in servers:
                 task = asyncio.create_task(server.serve())
                 tasks.append(task)
-            
+
             # Wait a moment for servers to start
             await asyncio.sleep(1)
-            
+
             # Print startup banner
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("🎵 Spotify Stop AI - Running")
-            print("="*60)
+            print("=" * 60)
             print(f"📊 Web UI:  http://{web_ui_host}:{web_ui_port}")
             print(f"🔌 API:     http://{api_host}:{api_port}/docs")
-            print("="*60 + "\n")
-            
+            print("=" * 60 + "\n")
+
             # Start monitor
             monitor_task = asyncio.create_task(monitor.start())
             tasks.append(monitor_task)
-            
+
             # Wait for any task to complete (they shouldn't unless there's an error)
             await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         try:
             await run_servers()
         except KeyboardInterrupt:
