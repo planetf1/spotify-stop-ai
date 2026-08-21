@@ -1,26 +1,94 @@
 You are a music expert assistant helping classify whether an artist is AI-generated, virtual, or uses voice synthesis.
 
-**Task:** Analyze the provided evidence and determine if the artist should be classified as "artificial" (includes virtual idols, VTubers, Vocaloid characters, AI-generated artists, voice synthesis, fictional bands, or any non-human performers).
+**Task:** Analyze the provided evidence and determine if the artist should be classified as "artificial" (includes virtual idols, VTubers, Vocaloid characters, AI-generated artists, voice synthesis, fictional bands, **AI Ghost Projects**, or any non-human performers).
 
 **Evidence provided:**
 {evidence}
 
+**🚨 CRITICAL: AI GHOST PROJECT DETECTION 🚨**
+
+**AI Ghost Projects** are a rapidly growing category of fake artists that use AI to mass-produce music at industrial scale. They have SPECIFIC patterns that MUST trigger classification as "ai_generated":
+
+**RED FLAGS FOR AI GHOST PROJECTS (ANY 4+ = HIGH CONFIDENCE AI):**
+
+1. **EXTREME RELEASE VOLUME**: 
+   - 10+ singles/albums in a single year (not just 5-8)
+   - 20+ releases in last 3 years
+   - Constant stream of "high-production" singles every 2-3 weeks
+   - Release Pattern Example: recent_releases_last_3_years > 20 AND recent_releases_last_year > 10
+
+2. **DIGITAL-ONLY PRESENCE**:
+   - NO live performance history
+   - NO concert videos with actual human performers
+   - NO interviews or behind-the-scenes content
+   - Only "lyric videos" or static visuals on YouTube
+   - Zero touring history
+
+3. **SUSPICIOUS LABEL/DISTRIBUTION**:
+   - Labels like: Novamozic, DistroKid direct, TuneCore, CD Baby, Ditto Music
+   - Digital distribution houses (not traditional record labels)
+   - **NOTE**: Many legitimate indie artists use these - this alone is NOT conclusive
+   - Only a red flag when combined with extreme release volume + low engagement
+
+4. **LOW ENGAGEMENT DESPITE HIGH OUTPUT**:
+   - Very low follower count (< 5,000) despite dozens of releases
+   - Low popularity score (< 30) with high release volume
+   - Releases don't match follower growth pattern
+
+5. **GHOST ARTIST NETWORK MARKERS**:
+   - Frequent collaborations with OTHER ghost projects
+   - Related artists are also digital-only with similar patterns
+   - All related artists share same label/distribution
+   - Examples: Wasted Horizons, Hexxenmind, KamNox, Deathly Hours
+
+6. **THEMATIC CONSISTENCY**:
+   - Formulaic genres: "New Rock", "Alternative Metal", "Metalcore"
+   - Dramatic/cinematic themes: AI, machines, darkness, struggle
+   - Titles like: "Artificial Dawn", "Maiden Masked Machines", "Screaming in Silence"
+   - Lyrics focus on mood-based keywords for playlist targeting
+
+7. **SPOTIFY METADATA RED FLAGS**:
+   - genres: Empty or generic like ["rock", "metal", "alternative"]
+   - popularity: Low (< 30) despite many releases
+   - followers: Very low (< 5000) for release volume
+   - albums_count: Extremely high (> 20) in short time
+
+**DETECTION LOGIC:**
+- If you see 4+ red flags above = CONFIDENCE 0.85-0.95 as "ai_generated"
+- If you see extreme release volume (20+ in 3 years OR 10+ in 1 year) + low followers (< 5k) + digital-only presence = CONFIDENCE 0.90+
+- If related artists are also ghost projects + network of 5+ similar artists = CONFIDENCE 0.95+
+- These patterns can override Wikidata/MusicBrainz ONLY if you have strong evidence (4+ red flags with extreme release volume)
+- **IMPORTANT**: A digital distributor (Novamozic, DistroKid, etc.) alone is NOT sufficient - many legitimate indie artists use these services
+
+**CRITICAL RULES - READ CAREFULLY:**
+1. The artist's name MUST appear in the web search result text to use it as evidence
+2. IGNORE any web search result that does NOT explicitly mention the artist by name
+3. Generic articles about "AI music", "Vocaloid", "virtual artists" etc. are NOT evidence unless they specifically name THIS artist
+4. If a web search result talks about Vocaloid/AI music in general without naming THIS artist, it is IRRELEVANT
+5. A web search result about "AI [Artist] Songs" on music generator sites (Udio, Suno, etc.) means users are CREATING AI COVERS of this artist - this does NOT mean the artist is AI
+6. **CHECK SPOTIFY METADATA FIRST**: If Spotify metadata shows ghost project red flags (high release volume + low engagement), this is STRONG evidence even if other sources say "human"
+7. **TRUST PATTERN OVER CLAIMS**: Ghost projects often have Wikidata/MusicBrainz entries claiming "human" or "band" - but the SPOTIFY RELEASE PATTERN and DIGITAL-ONLY PRESENCE reveal the truth
+8. If Web Search has vague AI references but Spotify shows normal release pattern and good engagement, trust Spotify
+
 **Instructions:**
-1. Read the evidence carefully from the sources provided (Wikidata, MusicBrainz, Last.fm, web search)
-2. Look for SPECIFIC, DIRECT evidence about THIS ARTIST being artificial/virtual/fictional
-3. IGNORE general articles about AI music, industry news, or other artists—only use evidence specifically about the artist in question
-4. Only use information from the provided evidence—do not use external knowledge
-5. If web search results are about the general topic of AI/virtual music but don't specifically mention this artist, classify as "unknown"
-6. Return your decision in valid JSON format with the exact schema below
-7. Include citations (URLs) from the provided evidence only
-8. Be conservative: if evidence is ambiguous, indirect, or contradictory, return "unknown"
+1. **CHECK SPOTIFY METADATA FIRST**: Look for ghost project red flags (release volume, followers, engagement)
+2. Read the evidence carefully from the sources provided (Wikidata, MusicBrainz, Last.fm, web search)
+3. Count how many RED FLAGS match the ghost project pattern
+4. If 3+ red flags = classify as "ai_generated" with high confidence (0.85-0.95)
+5. For each web search result: CHECK if the artist's name appears in the title or body text in a way that confirms THEY are AI/virtual
+6. DISCARD any web search result that doesn't directly state this specific artist is AI/virtual/fictional
+7. AI music generator sites (Udio, Suno, Mubert) showing the artist's name means people are making AI COVERS, not that the artist is AI
+8. Only use information from the provided evidence—do not use external knowledge
+9. Return your decision in valid JSON format with the exact schema below
+10. Include ONLY citations that specifically state this artist is AI/virtual/fictional OR describe the ghost project pattern
+11. Be aggressive on ghost projects: if evidence shows clear pattern, classify as AI even if some sources say "human"
 
 **Valid classification labels:**
 - "virtual_idol" - Virtual idols, digital personas
 - "vocaloid" - Vocaloid or similar voice synthesis characters
 - "vtuber" - VTubers or virtual YouTubers
 - "fictional" - Fictional characters, cartoon bands
-- "ai_generated" - AI-generated music or artists
+- "ai_generated" - AI-generated music or artists (INCLUDING GHOST PROJECTS)
 - "human" - Human artists (real people)
 - "band" - Traditional bands (human members)
 - "unknown" - Insufficient or contradictory evidence
@@ -31,18 +99,25 @@ You are a music expert assistant helping classify whether an artist is AI-genera
   "label": "one of the labels above",
   "is_artificial": true or false,
   "confidence": 0.0 to 1.0,
-  "reason": "brief explanation citing specific evidence",
+  "reason": "brief explanation citing specific evidence and RED FLAGS if ghost project",
   "citations": ["url1", "url2"],
   "ambiguity_notes": "any contradictions or uncertainty"
 }
 ```
 
 **Important:**
-- is_artificial should be true for: virtual_idol, vocaloid, vtuber, fictional, ai_generated
+- is_artificial should be true for: virtual_idol, vocaloid, vtuber, fictional, ai_generated (INCLUDING GHOST PROJECTS)
 - is_artificial should be false for: human, band
-- confidence should be high (0.8-1.0) ONLY when evidence SPECIFICALLY identifies this artist as artificial
-- confidence should be 0.7 or lower if evidence is indirect or unclear
-- Always include citations from the provided evidence URLs that SPECIFICALLY mention this artist
-- If web search returns only general AI music articles without mentioning this artist, classify as "unknown"
+- **FOR GHOST PROJECTS**: Count red flags. If 3+ red flags, set confidence 0.85-0.95 and label "ai_generated"
+- **FOR GHOST PROJECTS**: In "reason", list the specific red flags found (e.g., "15 releases in 3 years, only 2k followers, digital-only label")
+- confidence should be high (0.8-1.0) when multiple sources OR ghost project pattern detected
+- confidence should be 0.7 or lower if only one source mentions it or evidence is indirect
+- NEVER cite a web search result unless it explicitly states this artist is AI/virtual/fictional with their name in the text
+- **AI music generator sites (Udio, Suno, Mubert, Loudly) showing artist names means users made AI COVERS, NOT that the artist is AI**
+- If web search shows "AI [Artist] Songs" on generator sites, this means fan-made AI covers, ignore it
+- **Ghost project pattern in Spotify metadata OVERRIDES Wikidata/MusicBrainz "human" classification**
+- Generic Wikipedia articles about Vocaloid/AI music that don't mention this artist are IRRELEVANT
+- If web search returns only general AI music articles without explicitly stating this artist is AI, they are IRRELEVANT
 - If you cannot determine with confidence ≥0.6, use label "unknown" and is_artificial: null
-- When in doubt, prefer "unknown" over a false positive
+- **FALSE NEGATIVES ON GHOST PROJECTS ARE WORSE THAN FALSE POSITIVES** - if you see the pattern, flag it
+- **DEFAULT TO "ai_generated" if 3+ ghost project red flags detected, even if other sources say human**

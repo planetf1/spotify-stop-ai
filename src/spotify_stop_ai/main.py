@@ -133,7 +133,7 @@ async def main():
 
     # Initialize classifier
     logger.info("Initializing classifier...")
-    classifier = ArtistClassifier(config, database)
+    classifier = ArtistClassifier(config, database, spotify_client)
 
     # Initialize monitor
     logger.info("Initializing playback monitor...")

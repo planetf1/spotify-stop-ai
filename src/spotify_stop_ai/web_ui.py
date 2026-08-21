@@ -30,23 +30,62 @@ def create_web_ui(database, classifier, spotify_client, monitor):
     templates_dir.mkdir(exist_ok=True)
     templates = Jinja2Templates(directory=str(templates_dir))
 
+    # Cache for reducing API calls
+    cache = {
+        "artist_info": {},  # {artist_id: (data, timestamp)}
+        "playlists": (None, 0),  # (data, timestamp)
+        "artist_saved": {},  # {artist_id: (bool, timestamp)}
+        "playback_status": (None, 0),  # (data, timestamp)
+        "track_liked": {},  # {track_uri: (bool, timestamp)}
+    }
+    CACHE_TTL = 120  # seconds (aggressive caching to cut Spotify calls)
+    PLAYBACK_TTL = 8  # seconds (shorter for responsive controls)
+
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request):
         """Home page with current playback."""
         current_track = monitor.current_track
+        current_time = time.time()
 
-        # Get artist info and related artists
+        # Get artist info with caching
         artist_info = None
-        related_artists = None
         artist_is_saved = False
         if current_track and current_track.get("artist_id"):
             artist_id = current_track["artist_id"]
-            artist_info = spotify_client.get_artist(artist_id)
-            # Removed: get_artist_related() - not used and causes unnecessary API calls
-            artist_is_saved = spotify_client.check_artist_saved(artist_id)
 
-        # Get current playlists (for context display)
-        user_playlists = spotify_client.get_current_user_playlists(limit=20)
+            # Check cache for artist info
+            if artist_id in cache["artist_info"]:
+                cached_data, cached_time = cache["artist_info"][artist_id]
+                if current_time - cached_time < CACHE_TTL:
+                    artist_info = cached_data
+
+            # Fetch if not cached or expired
+            if artist_info is None:
+                artist_info = spotify_client.get_artist(artist_id)
+                if artist_info:
+                    cache["artist_info"][artist_id] = (artist_info, current_time)
+
+            # Check cache for saved status
+            if artist_id in cache["artist_saved"]:
+                cached_saved, cached_time = cache["artist_saved"][artist_id]
+                if current_time - cached_time < CACHE_TTL:
+                    artist_is_saved = cached_saved
+
+            # Fetch if not cached or expired
+            if (
+                artist_id not in cache["artist_saved"]
+                or current_time - cache["artist_saved"][artist_id][1] >= CACHE_TTL
+            ):
+                artist_is_saved = spotify_client.check_artist_saved(artist_id)
+                cache["artist_saved"][artist_id] = (artist_is_saved, current_time)
+
+        # Get playlists with caching
+        cached_playlists, cached_time = cache["playlists"]
+        if current_time - cached_time < CACHE_TTL and cached_playlists is not None:
+            user_playlists = cached_playlists
+        else:
+            user_playlists = spotify_client.get_current_user_playlists(limit=20)
+            cache["playlists"] = (user_playlists, current_time)
 
         # Highlight special playlists
         featured_playlists = []
@@ -140,7 +179,6 @@ def create_web_ui(database, classifier, spotify_client, monitor):
                 "current_artist_details": current_artist_details,
                 "artist_info": artist_info,
                 "artist_is_saved": artist_is_saved,
-                "related_artists": related_artists,
                 "user_playlists": featured_playlists,
                 "plays": plays,
                 "decisions": decisions,
@@ -244,19 +282,48 @@ def create_web_ui(database, classifier, spotify_client, monitor):
     async def current_playback_api():
         """Get current playback state (for auto-refresh)."""
         current_track = monitor.current_track
+        current_time = time.time()
 
-        # Get artist info
+        # Get artist info with caching
         artist_info = None
-        related_artists = None
         artist_is_saved = False
         if current_track and current_track.get("artist_id"):
             artist_id = current_track["artist_id"]
-            artist_info = spotify_client.get_artist(artist_id)
-            # Removed: get_artist_related() - not used and causes unnecessary API calls
-            artist_is_saved = spotify_client.check_artist_saved(artist_id)
 
-        # Get playlists
-        user_playlists = spotify_client.get_current_user_playlists(limit=20)
+            # Check cache for artist info
+            if artist_id in cache["artist_info"]:
+                cached_data, cached_time = cache["artist_info"][artist_id]
+                if current_time - cached_time < CACHE_TTL:
+                    artist_info = cached_data
+
+            # Fetch if not cached or expired
+            if artist_info is None:
+                artist_info = spotify_client.get_artist(artist_id)
+                if artist_info:
+                    cache["artist_info"][artist_id] = (artist_info, current_time)
+
+            # Check cache for saved status
+            if artist_id in cache["artist_saved"]:
+                cached_saved, cached_time = cache["artist_saved"][artist_id]
+                if current_time - cached_time < CACHE_TTL:
+                    artist_is_saved = cached_saved
+
+            # Fetch if not cached or expired
+            if (
+                artist_id not in cache["artist_saved"]
+                or current_time - cache["artist_saved"][artist_id][1] >= CACHE_TTL
+            ):
+                artist_is_saved = spotify_client.check_artist_saved(artist_id)
+                cache["artist_saved"][artist_id] = (artist_is_saved, current_time)
+
+        # Get playlists with caching
+        cached_playlists, cached_time = cache["playlists"]
+        if current_time - cached_time < CACHE_TTL and cached_playlists is not None:
+            user_playlists = cached_playlists
+        else:
+            user_playlists = spotify_client.get_current_user_playlists(limit=20)
+            cache["playlists"] = (user_playlists, current_time)
+
         featured_playlists = []
         if user_playlists:
             keywords = [
@@ -272,6 +339,7 @@ def create_web_ui(database, classifier, spotify_client, monitor):
                     featured_playlists.append(playlist)
 
         # Get detailed classification for current artist if available
+        related_artists = None  # not used but kept for response structure
         current_artist_details = None
         if current_track and current_track.get("artist_id"):
             import json
@@ -356,6 +424,37 @@ def create_web_ui(database, classifier, spotify_client, monitor):
             "poll_interval": monitor.poll_interval,
             "rate_limit": rate_limit_info,
         }
+
+    @app.get("/api/settings")
+    async def get_settings():
+        """Get current action settings."""
+        return {
+            "auto_skip": monitor.auto_skip,
+            "instant_block_mode": monitor.instant_block_mode,
+            "skip_threshold": monitor.skip_threshold,
+        }
+
+    @app.post("/api/settings/auto-skip")
+    async def toggle_auto_skip(enabled: bool = Form(...)):
+        """Toggle auto-skip mode."""
+        try:
+            monitor.auto_skip = enabled
+            logger.info(f"Auto-skip {'enabled' if enabled else 'disabled'}")
+            return {"status": "ok", "auto_skip": monitor.auto_skip}
+        except Exception as e:
+            logger.error(f"Failed to toggle auto-skip: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @app.post("/api/settings/instant-block")
+    async def toggle_instant_block(enabled: bool = Form(...)):
+        """Toggle instant block mode."""
+        try:
+            monitor.instant_block_mode = enabled
+            logger.info(f"Instant block mode {'enabled' if enabled else 'disabled'}")
+            return {"status": "ok", "instant_block_mode": monitor.instant_block_mode}
+        except Exception as e:
+            logger.error(f"Failed to toggle instant block: {e}")
+            return {"status": "error", "message": str(e)}
 
     # Playback Control Endpoints
     @app.post("/api/playback/play")
@@ -446,10 +545,39 @@ def create_web_ui(database, classifier, spotify_client, monitor):
 
     @app.get("/api/playback/status")
     async def get_playback_status():
-        """Get current playback status."""
+        """Get current playback status with caching."""
         try:
-            playback = spotify_client.get_current_playback()
+            current_time = time.time()
             current_track = monitor.current_track
+
+            # Check cache for playback status (short TTL for responsive UI)
+            cached_status, cached_time = cache["playback_status"]
+            if current_time - cached_time < PLAYBACK_TTL and cached_status is not None:
+                # Still return cached status but update track-specific data
+                status = cached_status.copy()
+
+                # Update track-specific info if track changed
+                if current_track and current_track.get("uri"):
+                    track_uri = current_track["uri"]
+                    if status.get("track_uri") != track_uri:
+                        # New track, check if liked
+                        if track_uri in cache["track_liked"]:
+                            cached_liked, cached_time_liked = cache["track_liked"][
+                                track_uri
+                            ]
+                            if current_time - cached_time_liked < CACHE_TTL:
+                                status["is_liked"] = cached_liked
+                                status["track_uri"] = track_uri
+                        else:
+                            is_liked = spotify_client.check_track_liked(track_uri)
+                            cache["track_liked"][track_uri] = (is_liked, current_time)
+                            status["is_liked"] = is_liked
+                            status["track_uri"] = track_uri
+
+                return status
+
+            # Fetch fresh status
+            playback = spotify_client.get_current_playback()
 
             is_playing = playback and playback.get("is_playing", False)
             is_shuffled = playback and playback.get("shuffle_state", False)
@@ -458,14 +586,32 @@ def create_web_ui(database, classifier, spotify_client, monitor):
 
             if current_track and current_track.get("uri"):
                 track_uri = current_track["uri"]
-                is_liked = spotify_client.check_track_liked(track_uri)
 
-            return {
+                # Check cache for liked status
+                if track_uri in cache["track_liked"]:
+                    cached_liked, cached_time_liked = cache["track_liked"][track_uri]
+                    if current_time - cached_time_liked < CACHE_TTL:
+                        is_liked = cached_liked
+
+                # Fetch if not cached
+                if (
+                    track_uri not in cache["track_liked"]
+                    or current_time - cache["track_liked"][track_uri][1] >= CACHE_TTL
+                ):
+                    is_liked = spotify_client.check_track_liked(track_uri)
+                    cache["track_liked"][track_uri] = (is_liked, current_time)
+
+            status = {
                 "is_playing": is_playing,
                 "is_shuffled": is_shuffled,
                 "is_liked": is_liked,
                 "track_uri": track_uri,
             }
+
+            # Cache the status (short TTL)
+            cache["playback_status"] = (status, current_time)
+
+            return status
         except Exception as e:
             logger.error(f"Failed to get playback status: {e}")
             return {

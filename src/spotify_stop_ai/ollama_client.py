@@ -268,8 +268,71 @@ class OllamaClient:
         """
         lines = [f"Artist: {artist_name}\n"]
 
+        # Add Spotify metadata first if available (most important for ghost artist detection)
+        if "spotify" in evidence and evidence["spotify"].get("success"):
+            spotify_data = evidence["spotify"].get("metadata", {})
+            lines.append("\n🎵 SPOTIFY METADATA (KEY FOR GHOST ARTIST DETECTION):")
+            lines.append(f"  Followers: {spotify_data.get('followers', 0):,}")
+            lines.append(f"  Popularity: {spotify_data.get('popularity', 0)}/100")
+            lines.append(
+                f"  Genres: {', '.join(spotify_data.get('genres', [])) or 'None listed'}"
+            )
+            lines.append(
+                f"  Total Albums/Singles: {spotify_data.get('albums_count', 0)}"
+            )
+
+            if "release_pattern" in spotify_data:
+                rp = spotify_data["release_pattern"]
+                lines.append(f"  📊 RELEASE PATTERN ANALYSIS:")
+                lines.append(
+                    f"     - Recent releases (last 3 years): {rp.get('recent_releases_last_3_years', 0)}"
+                )
+                lines.append(
+                    f"     - Average per year (recent): {rp.get('avg_per_recent_year', 0)}"
+                )
+                if rp.get("releases_by_year"):
+                    lines.append(f"     - By year: {rp['releases_by_year']}")
+
+            if spotify_data.get("related_artists"):
+                lines.append(
+                    f"  🔗 Related Artists: {', '.join(spotify_data['related_artists'][:5])}"
+                )
+
+            lines.append("")
+            lines.append("  ⚠️ GHOST ARTIST CHECK:")
+            # Calculate red flags
+            red_flags = []
+            rp = spotify_data.get("release_pattern", {})
+            recent = rp.get("recent_releases_last_3_years", 0)
+            followers = spotify_data.get("followers", 0)
+            popularity = spotify_data.get("popularity", 0)
+
+            if recent >= 15:
+                red_flags.append(f"🚩 EXTREME release volume: {recent} in 3 years")
+            if followers < 5000 and recent > 10:
+                red_flags.append(
+                    f"🚩 LOW engagement: {followers:,} followers with {recent} releases"
+                )
+            if popularity < 30 and recent > 10:
+                red_flags.append(
+                    f"🚩 LOW popularity: {popularity}/100 despite {recent} releases"
+                )
+            if not spotify_data.get("genres"):
+                red_flags.append("🚩 NO genres listed (typical for ghost projects)")
+
+            if red_flags:
+                for flag in red_flags:
+                    lines.append(f"     {flag}")
+                lines.append(f"     ⚠️ TOTAL RED FLAGS: {len(red_flags)}")
+                if len(red_flags) >= 3:
+                    lines.append("     🚨 HIGH CONFIDENCE: Likely AI Ghost Project")
+            else:
+                lines.append("     ✓ No ghost project red flags detected")
+
         # Add data source evidence
         for source_name, result in evidence.items():
+            if source_name == "spotify":  # Already handled above
+                continue
             if not result.get("success"):
                 continue
 

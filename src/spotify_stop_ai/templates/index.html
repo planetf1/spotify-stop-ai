@@ -59,6 +59,18 @@
                         <button id="btn-shuffle" class="btn-icon" title="Shuffle" onclick="toggleShuffle()">🔀</button>
                         <button id="btn-like" class="btn-icon" title="Like Track" onclick="toggleLike()">🤍</button>
                     </div>
+                    
+                    <!-- AI Protection Settings -->
+                    <div style="display: flex; gap: 1rem; margin-top: 1.2rem; padding: 0.8rem; background: rgba(30, 215, 96, 0.05); border-radius: 6px; border: 1px solid rgba(30, 215, 96, 0.2);">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #e0e0e0; font-size: 0.85rem;">
+                            <input type="checkbox" id="toggle-auto-skip" onchange="toggleAutoSkip()" style="width: 16px; height: 16px; cursor: pointer;">
+                            <span title="Automatically skip tracks when AI is detected">🚫 Auto-Skip AI</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #e0e0e0; font-size: 0.85rem;">
+                            <input type="checkbox" id="toggle-instant-block" onchange="toggleInstantBlock()" style="width: 16px; height: 16px; cursor: pointer;">
+                            <span title="Instantly skip known AI artists without re-analyzing (~1s instead of ~15s)">⚡ Instant Block</span>
+                        </label>
+                    </div>
                 </div>
             </div>
             
@@ -270,17 +282,18 @@
                     {% endif %}
             </div>
         
-        {% if current_artist_details.is_artificial is none %}
-        <div style="padding: 1rem; border-radius: 6px; background: rgba(136, 136, 136, 0.06); border-left: 3px solid #666666; text-align: center;">
-            <div style="color: #888888; font-size: 0.9rem;">⏳ Classification in progress...</div>
+        <!-- Classification Status Footer -->
+        <div id="classification-status" style="padding: 0.8rem; border-radius: 4px; border-left: 3px solid; margin-top: 1rem; background: rgba(136, 136, 136, 0.06);">
+            {% if current_artist_details.is_artificial is none %}
+            <div style="color: #888888; font-size: 0.85rem; font-weight: 600;">⏳ Classification in progress...</div>
             <div style="color: #666666; font-size: 0.8rem; margin-top: 0.3rem;">Checking multiple sources and AI analysis</div>
-        </div>
-        {% elif current_artist_details.sources and not (current_artist_details.llm_output and current_artist_details.llm_output.output) %}
-        <div style="padding: 0.8rem; border-radius: 4px; background: rgba(30, 215, 96, 0.06); border-left: 3px solid #1ed760; margin-top: 1rem;">
+            {% elif current_artist_details.sources and not (current_artist_details.llm_output and current_artist_details.llm_output.output) %}
             <div style="color: #1ed760; font-size: 0.85rem; font-weight: 600;">✓ Classification from verified sources</div>
             <div style="color: #888888; font-size: 0.8rem; margin-top: 0.3rem;">Result based on Wikidata, MusicBrainz, and Last.fm data</div>
+            {% else %}
+            <div style="color: #666666; font-size: 0.8rem;">Classification complete</div>
+            {% endif %}
         </div>
-        {% endif %}
         
         </div>
         
@@ -289,9 +302,72 @@
         </div>
     </div>
     {% else %}
-    <div style="padding: 1.5rem; text-align: center; border-top: 1px solid #242424;">
-        <div style="color: #666666; font-size: 0.9rem;">
-            ⏳ Analyzing artist... Please wait
+    <!-- No artist details yet - show full placeholder structure -->
+    <div style="padding: 1.5rem; border-top: 1px solid #242424;">
+        <!-- Decision Result Box -->
+        <div id="decision-result" style="padding: 1rem; border-radius: 6px; margin-bottom: 1rem; background: rgba(136, 136, 136, 0.08); border-left: 3px solid #666666;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="color: #888888; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 0.5rem;">Classification:</span>
+                    <span style="font-size: 1rem; font-weight: 700; color: #888888;">
+                        ⏳ Analyzing...
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: #888888;">-</div>
+                        <div style="color: #666666; font-size: 0.75rem;">confidence</div>
+                    </div>
+                    <span style="color: #888888; font-size: 1.2rem;">▼</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expandable Classification Details -->
+        <div id="classification-details" style="display: block; margin-bottom: 1rem;">
+        
+        <!-- Source Results Grid - Placeholder -->
+        <div style="margin-bottom: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;">
+                <!-- Wikidata Placeholder -->
+                <div class="source-card" style="padding: 0.8rem; border: 1px solid #333333; border-radius: 4px; background: rgba(51, 51, 51, 0.06); cursor: pointer; transition: all 0.2s;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">wikidata</div>
+                    </div>
+                    <div style="color: #666666; font-size: 0.8rem;">⏳ Waiting...</div>
+                </div>
+
+                <!-- MusicBrainz Placeholder -->
+                <div class="source-card" style="padding: 0.8rem; border: 1px solid #333333; border-radius: 4px; background: rgba(51, 51, 51, 0.06); cursor: pointer; transition: all 0.2s;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">musicbrainz</div>
+                    </div>
+                    <div style="color: #666666; font-size: 0.8rem;">⏳ Waiting...</div>
+                </div>
+
+                <!-- Last.fm Placeholder -->
+                <div class="source-card" style="padding: 0.8rem; border: 1px solid #333333; border-radius: 4px; background: rgba(51, 51, 51, 0.06); cursor: pointer; transition: all 0.2s;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">lastfm</div>
+                    </div>
+                    <div style="color: #666666; font-size: 0.8rem;">⏳ Waiting...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Analysis Card - Placeholder -->
+        <div class="source-card" style="padding: 1rem; border: 1px solid #ffa500; border-radius: 4px; background: rgba(255, 165, 0, 0.06); cursor: pointer; transition: all 0.2s; margin-top: 0.8rem;" title="AI analysis will run when classification starts">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <div style="font-weight: 600; font-size: 0.8rem; color: #d0d0d0;">🤖 AI Analysis</div>
+            </div>
+            <div style="color: #666666; font-size: 0.8rem;">⏳ Waiting for analysis...</div>
+        </div>
+
+        <!-- Classification Status Footer -->
+        <div id="classification-status" style="padding: 0.8rem; border-radius: 4px; border-left: 3px solid #666666; margin-top: 1rem; background: rgba(136, 136, 136, 0.06);">
+            <div style="color: #888888; font-size: 0.85rem; font-weight: 600;">⏳ Classification in progress...</div>
+            <div style="color: #666666; font-size: 0.8rem; margin-top: 0.3rem;">Checking multiple sources and AI analysis</div>
+        </div>
         </div>
     </div>
     {% endif %}
@@ -478,6 +554,52 @@
         } catch (err) { console.error('Toggle like failed:', err); }
     }
     
+    async function toggleAutoSkip() {
+        try {
+            const checkbox = document.getElementById('toggle-auto-skip');
+            const formData = new FormData();
+            formData.append('enabled', checkbox.checked);
+            
+            const response = await fetch('/api/settings/auto-skip', { 
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Auto-skip toggled:', data.auto_skip);
+            }
+        } catch (err) { console.error('Toggle auto-skip failed:', err); }
+    }
+    
+    async function toggleInstantBlock() {
+        try {
+            const checkbox = document.getElementById('toggle-instant-block');
+            const formData = new FormData();
+            formData.append('enabled', checkbox.checked);
+            
+            const response = await fetch('/api/settings/instant-block', { 
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Instant block toggled:', data.instant_block_mode);
+            }
+        } catch (err) { console.error('Toggle instant block failed:', err); }
+    }
+    
+    async function loadSettings() {
+        try {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            
+            document.getElementById('toggle-auto-skip').checked = settings.auto_skip;
+            document.getElementById('toggle-instant-block').checked = settings.instant_block_mode;
+        } catch (err) { console.error('Load settings failed:', err); }
+    }
+    
     let currentTrackUri = '';
     
     async function openVideo() {
@@ -598,6 +720,80 @@
             `;
         }
         
+        // Update decision result box when details arrive
+        const decisionResult = document.getElementById('decision-result');
+        if (decisionResult && details) {
+            const isArtificial = details.is_artificial;
+            const confidence = details.confidence || 0;
+            let classLabel = '❓ Unknown/Pending';
+            let bgColor = 'rgba(136, 136, 136, 0.08)';
+            let borderColor = '#666666';
+            let textColor = '#888888';
+            
+            if (isArtificial === 1) {
+                classLabel = '⚠️ AI Generated';
+                bgColor = 'rgba(255, 71, 87, 0.08)';
+                borderColor = '#ff4757';
+                textColor = '#ff4757';
+            } else if (isArtificial === 0) {
+                classLabel = '✓ Human Artist';
+                bgColor = 'rgba(30, 215, 96, 0.08)';
+                borderColor = '#1ed760';
+                textColor = '#1ed760';
+            }
+            
+            decisionResult.style.background = bgColor;
+            decisionResult.style.borderColor = borderColor;
+            
+            decisionResult.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="color: #888888; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 0.5rem;">Classification:</span>
+                        <span style="font-size: 1rem; font-weight: 700; color: ${textColor};">
+                            ${classLabel}
+                        </span>
+                        ${details.overridden ? '<span style="color: #ffa500; font-size: 0.85rem; margin-left: 0.5rem;">⚠️ Override</span>' : ''}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.4rem; font-weight: 700; color: ${textColor};">${Math.round(confidence * 100)}%</div>
+                            <div style="color: #666666; font-size: 0.75rem;">confidence</div>
+                        </div>
+                        <span style="color: #888888; font-size: 1.2rem;">▼</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Update classification status footer
+        const statusElement = document.getElementById('classification-status');
+        if (statusElement && details) {
+            if (details.is_artificial === null) {
+                // Still analyzing
+                statusElement.innerHTML = `
+                    <div style="color: #888888; font-size: 0.85rem; font-weight: 600;">⏳ Classification in progress...</div>
+                    <div style="color: #666666; font-size: 0.8rem; margin-top: 0.3rem;">Checking multiple sources and AI analysis</div>
+                `;
+                statusElement.style.borderColor = '#666666';
+                statusElement.style.background = 'rgba(136, 136, 136, 0.06)';
+            } else if (details.sources && !(details.llm_output && details.llm_output.output)) {
+                // Done with sources, no LLM output
+                statusElement.innerHTML = `
+                    <div style="color: #1ed760; font-size: 0.85rem; font-weight: 600;">✓ Classification from verified sources</div>
+                    <div style="color: #888888; font-size: 0.8rem; margin-top: 0.3rem;">Result based on Wikidata, MusicBrainz, and Last.fm data</div>
+                `;
+                statusElement.style.borderColor = '#1ed760';
+                statusElement.style.background = 'rgba(30, 215, 96, 0.06)';
+            } else {
+                // Complete
+                statusElement.innerHTML = `
+                    <div style="color: #666666; font-size: 0.8rem;">Classification complete</div>
+                `;
+                statusElement.style.borderColor = '#242424';
+                statusElement.style.background = 'rgba(136, 136, 136, 0.06)';
+            }
+        }
+        
         // Update button states
         updatePlaybackStatus();
         
@@ -608,6 +804,7 @@
     // Auto-refresh every 2 seconds
     // Poll for updates - faster when analyzing
     let isAnalyzing = {{ 'true' if not current_artist_details else 'false' }};
+    let lastLLMOutputState = {{ 'true' if current_artist_details and current_artist_details.get('llm_output') else 'false' }};
     let rateLimitStatusInterval = null;
     
     async function updateMonitorStatus() {
@@ -649,7 +846,7 @@
         }
     }
     
-    // Check rate limit status every few seconds
+    // Check rate limit status every 10 seconds (reduced frequency)
     setInterval(async () => {
         const response = await fetch('/api/status');
         const status = await response.json();
@@ -660,8 +857,9 @@
             stopRateLimitCountdown();
             document.getElementById('rate-limit-banner').style.display = 'none';
         }
-    }, 5000);
+    }, 10000);
     
+    // Poll for playback updates - reduced frequency
     setInterval(async () => {
         try {
             const response = await fetch('/api/current');
@@ -674,13 +872,25 @@
                 return;
             }
             
+            // If LLM output just became available (or changed), reload to display results
+            const hasLLMOutput = data.current_artist_details && 
+                                 data.current_artist_details.llm_output && 
+                                 data.current_artist_details.llm_output.output;
+            if (!lastLLMOutputState && hasLLMOutput) {
+                lastLLMOutputState = true;
+                location.reload();
+                return;
+            }
+            lastLLMOutputState = hasLLMOutput;
+            
             isAnalyzing = !data.current_artist_details;
             updateCurrentPlayback(data);
         } catch (err) { console.error('Refresh failed:', err); }
-    }, isAnalyzing ? 1000 : 2000);
+    }, isAnalyzing ? 3000 : 8000);
     
     // Initial load
     document.addEventListener('DOMContentLoaded', function() {
+        loadSettings();
         updatePlaybackStatus();
         updateMonitorStatus();
     });

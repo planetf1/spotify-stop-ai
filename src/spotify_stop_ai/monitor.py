@@ -36,6 +36,7 @@ class PlaybackMonitor:
         self.blocked_playlist_name = config["actions"].get(
             "add_to_blocked_playlist", ""
         )
+        self.instant_block_mode = config["actions"].get("instant_block_known_ai", True)
 
         self.current_backoff = self.poll_interval
         self.last_track_id: Optional[str] = None
@@ -182,6 +183,32 @@ class PlaybackMonitor:
         primary_artist = artists[0]
         artist_id = primary_artist["id"]
         artist_name = primary_artist["name"]
+
+        # Instant block: Check if we already know this artist is AI
+        if self.instant_block_mode:
+            cached = await self.db.get_cached_decision(artist_id)
+            if cached and cached.get("is_artificial") is True:
+                confidence = cached.get("confidence", 0.0)
+                if confidence >= self.skip_threshold:
+                    logger.info(
+                        f"⚡ Instant block: {artist_name} (known AI, confidence: {confidence:.2f})"
+                    )
+                    # Skip immediately without re-classifying
+                    if self.auto_skip:
+                        success = self.spotify.skip_to_next()
+                        if success:
+                            logger.info(f"⚡ Instantly skipped: {track_name}")
+                            await self.db.insert_action(
+                                play_id,
+                                skipped=True,
+                                removed_from_playlist=False,
+                                added_to_blocked=False,
+                            )
+                        else:
+                            logger.error(f"Failed to skip track: {track_name}")
+                    # Use cached decision for web UI
+                    self.last_decision = self.classifier._decision_from_db(cached)
+                    return
 
         decision = await self.classifier.classify_artist(
             artist_id, artist_name, track_name

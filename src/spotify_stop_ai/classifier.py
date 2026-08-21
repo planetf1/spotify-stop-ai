@@ -27,15 +27,17 @@ class ArtistClassifier:
         "virtual_band",
     }
 
-    def __init__(self, config: Dict[str, Any], database):
+    def __init__(self, config: Dict[str, Any], database, spotify_client=None):
         """Initialize classifier with config.
 
         Args:
             config: Configuration dict
             database: Database instance
+            spotify_client: Optional Spotify client for metadata
         """
         self.config = config
         self.db = database
+        self.spotify_client = spotify_client
 
         # Initialize classifiers
         self.classifiers: Dict[str, Any] = {}
@@ -65,6 +67,9 @@ class ArtistClassifier:
         ]
         self.cache_duration = config["classification"]["cache_duration_seconds"]
 
+        # LLM configuration
+        self.always_use_llm = config.get("ollama", {}).get("always_use_llm", False)
+
         # Initialize LLM fallback if enabled
         self.ollama_client = None
         if config.get("ollama", {}).get("enabled"):
@@ -78,8 +83,9 @@ class ArtistClassifier:
                     / "classify_artist.txt"
                 )
                 self.ollama_client = OllamaClient(config["ollama"], str(prompt_path))
+                mode = "voting source (25%)" if self.always_use_llm else "fallback only"
                 logger.info(
-                    f"Ollama LLM fallback enabled with model {config['ollama'].get('model', 'unknown')}"
+                    f"Ollama LLM enabled as {mode} with model {config['ollama'].get('model', 'unknown')}"
                 )
             except Exception as e:
                 logger.warning(f"Failed to initialize Ollama client: {e}")
@@ -127,6 +133,20 @@ class ArtistClassifier:
             logger.info(f"Using cached decision for artist {artist_name}")
             return self._decision_from_db(cached)
 
+        # Collect Spotify metadata for enhanced detection
+        spotify_metadata = None
+        if self.spotify_client:
+            try:
+                spotify_metadata = await self._collect_spotify_metadata(
+                    artist_id, artist_name
+                )
+                if spotify_metadata:
+                    logger.info(
+                        f"Collected Spotify metadata: {spotify_metadata.get('followers', 0)} followers, {len(spotify_metadata.get('genres', []))} genres, {spotify_metadata.get('albums_count', 0)} albums"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to collect Spotify metadata: {e}")
+
         # Query all enabled sources
         logger.info(f"Classifying artist: {artist_name} (ID: {artist_id})")
         source_results = {}
@@ -141,7 +161,9 @@ class ArtistClassifier:
                 source_results[source_name] = {"success": False, "error": str(e)}
 
         # Aggregate results
-        decision = await self._aggregate_sources(artist_id, artist_name, source_results)
+        decision = await self._aggregate_sources(
+            artist_id, artist_name, source_results, spotify_metadata
+        )
 
         # Store decision in database
         await self._store_decision(decision)
@@ -153,6 +175,7 @@ class ArtistClassifier:
         artist_id: str,
         artist_name: str,
         source_results: Dict[str, Dict[str, Any]],
+        spotify_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Aggregate results from multiple sources.
 
@@ -160,6 +183,7 @@ class ArtistClassifier:
             artist_id: Spotify artist ID
             artist_name: Artist name
             source_results: Dict of source results
+            spotify_metadata: Optional Spotify metadata for context
 
         Returns:
             Aggregated decision dict
@@ -186,15 +210,26 @@ class ArtistClassifier:
         # Always run LLM analysis in parallel for additional insights
         llm_used = False
         llm_fallback = None
+        llm_vote_artificial = None  # True/False/None for voting
+
         if self.ollama_client:
             logger.info(f"Running AI analysis for {artist_name}...")
             try:
-                llm_result = await self.ollama_client.classify(
-                    artist_name, source_results
-                )
+                # Combine source results with Spotify metadata
+                evidence = dict(source_results)
+                if spotify_metadata:
+                    evidence["spotify"] = {
+                        "success": True,
+                        "result": spotify_metadata,
+                        "metadata": spotify_metadata,
+                    }
+
+                llm_result = await self.ollama_client.classify(artist_name, evidence)
                 if llm_result and llm_result.get("output"):
                     llm_used = True
                     llm_fallback = llm_result
+                    llm_output = llm_result.get("output", {})
+                    llm_vote_artificial = llm_output.get("is_artificial")
                     logger.info(f"✓ AI analysis completed for {artist_name}")
                 else:
                     logger.warning(
@@ -202,6 +237,21 @@ class ArtistClassifier:
                     )
             except Exception as e:
                 logger.error(f"AI analysis failed for {artist_name}: {e}")
+
+        # Determine total number of voters
+        total_voters = successful_sources
+        if self.always_use_llm and llm_used and llm_vote_artificial is not None:
+            total_voters += 1  # LLM counts as a voter
+            if llm_vote_artificial:
+                artificial_votes += 1
+            else:
+                human_votes += 1
+            logger.info(
+                f"LLM voting enabled: cast vote for {'artificial' if llm_vote_artificial else 'human'}"
+            )
+
+        # Calculate confidence as percentage (each source = 25% if 4 total sources including LLM)
+        # This gives: Wikidata=25%, MusicBrainz=25%, Last.fm=25%, LLM=25%
 
         # Determine decision
         is_artificial = None
@@ -213,38 +263,46 @@ class ArtistClassifier:
         if artificial_votes >= self.min_source_agreement:
             # Enough sources agree it's artificial
             is_artificial = True
-            confidence = min(1.0, artificial_votes / len(self.classifiers))
+            confidence = artificial_votes / total_voters if total_voters > 0 else 0.0
             label = labels_found[0] if labels_found else "artificial"
             reason_parts.append(
-                f"Classified as artificial: {artificial_votes}/{successful_sources} "
+                f"Classified as artificial: {artificial_votes}/{total_voters} "
                 f"sources agree. Labels: {', '.join(set(labels_found))}"
             )
             reason_parts.append(
                 f"Threshold: {self.min_source_agreement} sources required"
             )
-            # Add AI analysis perspective if available and agrees
+            # Add AI analysis perspective if available
             if llm_used and llm_fallback and llm_fallback.get("output"):
                 llm_output = llm_fallback["output"]
                 llm_is_ai = llm_output.get("is_artificial")
-                if llm_is_ai == True:
-                    reason_parts.append(
-                        f"AI Analysis agrees: {llm_output.get('reason', '')}"
-                    )
-                elif llm_is_ai == False:
-                    reason_parts.append(
-                        f"⚠️ AI Analysis disagrees: classifies as human ({llm_output.get('reason', '')})"
-                    )
-                    confidence = min(
-                        confidence, 0.85
-                    )  # Reduce confidence if AI disagrees
+                if self.always_use_llm:
+                    if llm_is_ai == True:
+                        reason_parts.append(
+                            f"AI Analysis voted: artificial ({llm_output.get('reason', '')})"
+                        )
+                    elif llm_is_ai == False:
+                        reason_parts.append(
+                            f"AI Analysis voted: human ({llm_output.get('reason', '')})"
+                        )
+                else:
+                    # Fallback mode: just show agreement/disagreement
+                    if llm_is_ai == True:
+                        reason_parts.append(
+                            f"AI Analysis agrees: {llm_output.get('reason', '')}"
+                        )
+                    elif llm_is_ai == False:
+                        reason_parts.append(
+                            f"⚠️ AI Analysis disagrees: classifies as human ({llm_output.get('reason', '')})"
+                        )
         elif self.band_policy and artificial_votes > 0 and human_votes == 0:
             # Band policy: any virtual/fictional signal = artificial
             is_artificial = True
-            confidence = min(0.8, artificial_votes / len(self.classifiers))
+            confidence = artificial_votes / total_voters if total_voters > 0 else 0.0
             label = labels_found[0] if labels_found else "artificial"
             band_policy_applied = True
             reason_parts.append(
-                f"Classified as artificial: {artificial_votes}/{successful_sources} "
+                f"Classified as artificial: {artificial_votes}/{total_voters} "
                 f"sources agree. Labels: {', '.join(set(labels_found))}"
             )
             reason_parts.append(
@@ -256,48 +314,117 @@ class ArtistClassifier:
         elif human_votes >= self.min_source_agreement:
             # Enough sources agree it's human
             is_artificial = False
-            confidence = min(1.0, human_votes / len(self.classifiers))
+            confidence = human_votes / total_voters if total_voters > 0 else 0.0
             label = "human"
             reason_parts.append(
-                f"Classified as human: {human_votes}/{successful_sources} sources agree"
+                f"Classified as human: {human_votes}/{total_voters} sources agree"
             )
             reason_parts.append(
                 f"Threshold: {self.min_source_agreement} sources required"
             )
-            # Add AI analysis perspective if available and agrees
+            # Add AI analysis perspective if available
             if llm_used and llm_fallback and llm_fallback.get("output"):
                 llm_output = llm_fallback["output"]
                 llm_is_ai = llm_output.get("is_artificial")
-                if llm_is_ai == False:
-                    reason_parts.append(
-                        f"AI Analysis agrees: {llm_output.get('reason', '')}"
-                    )
-                elif llm_is_ai == True:
-                    reason_parts.append(
-                        f"⚠️ AI Analysis disagrees: classifies as AI/virtual ({llm_output.get('reason', '')})"
-                    )
-                    confidence = min(
-                        confidence, 0.85
-                    )  # Reduce confidence if AI disagrees
+                if self.always_use_llm:
+                    if llm_is_ai == False:
+                        reason_parts.append(
+                            f"AI Analysis voted: human ({llm_output.get('reason', '')})"
+                        )
+                    elif llm_is_ai == True:
+                        reason_parts.append(
+                            f"AI Analysis voted: artificial ({llm_output.get('reason', '')})"
+                        )
+                else:
+                    # Fallback mode: just show agreement/disagreement
+                    if llm_is_ai == False:
+                        reason_parts.append(
+                            f"AI Analysis agrees: {llm_output.get('reason', '')}"
+                        )
+                    elif llm_is_ai == True:
+                        reason_parts.append(
+                            f"⚠️ AI Analysis disagrees: classifies as AI/virtual ({llm_output.get('reason', '')})"
+                        )
         else:
             # Inconclusive or unclear
             # Use LLM result if available, otherwise return inconclusive
             if llm_used and llm_fallback and llm_fallback.get("output"):
                 llm_output = llm_fallback["output"]
                 is_artificial = llm_output.get("is_artificial")
-                # Cap LLM confidence at 0.75 when used as fallback (sources inconclusive)
-                confidence = min(llm_output.get("confidence", 0.5), 0.75)
-                label = "llm_" + llm_output.get("label", "unknown")
+                llm_confidence = llm_output.get("confidence", 0.5)
 
-                reason_parts.append(
-                    f"Insufficient source agreement ({artificial_votes} AI vs {human_votes} human "
-                    f"from {successful_sources} sources). Using AI analysis result (confidence capped at 0.75)."
-                )
+                # Check if LLM detected strong ghost project pattern
+                # If LLM has high confidence (>0.85) suggesting AI, trust it more
+                ghost_project_override = False
+                if is_artificial and llm_confidence >= 0.85:
+                    reason = llm_output.get("reason", "").lower()
+                    # Look for ghost project indicators in the reason
+                    ghost_indicators = [
+                        "ghost project",
+                        "extreme release",
+                        "low engagement",
+                        "digital-only",
+                        "red flag",
+                        "suspicious label",
+                    ]
+                    if any(indicator in reason for indicator in ghost_indicators):
+                        ghost_project_override = True
+                        logger.info(
+                            f"🚨 LLM detected strong ghost project pattern with {llm_confidence:.2f} confidence"
+                        )
+
+                if self.always_use_llm:
+                    # LLM already voted, but check for ghost project override
+                    if ghost_project_override:
+                        # Trust LLM's high-confidence ghost project detection
+                        is_artificial = True
+                        confidence = llm_confidence
+                        label = "ai_generated"
+                        reason_parts.append(
+                            f"🚨 AI Ghost Project detected by LLM with high confidence ({llm_confidence:.2f})"
+                        )
+                        reason_parts.append(
+                            f"LLM Analysis: {llm_output.get('reason', '')}"
+                        )
+                    else:
+                        # Standard inconclusive handling
+                        confidence = (
+                            max(artificial_votes, human_votes) / total_voters
+                            if total_voters > 0
+                            else 0.0
+                        )
+                        label = "inconclusive"
+                        reason_parts.append(
+                            f"Inconclusive: {artificial_votes} voted artificial, {human_votes} voted human "
+                            f"from {total_voters} total sources (including AI). "
+                            f"Threshold of {self.min_source_agreement} not met."
+                        )
+                else:
+                    # Fallback mode
+                    if ghost_project_override:
+                        # Trust LLM's high-confidence ghost project detection
+                        confidence = llm_confidence
+                    else:
+                        # Cap LLM confidence at 0.75 when used as fallback (sources inconclusive)
+                        confidence = min(llm_confidence, 0.75)
+                    label = "llm_" + llm_output.get("label", "unknown")
+
+                    reason_parts.append(
+                        f"Insufficient source agreement ({artificial_votes} AI vs {human_votes} human "
+                        f"from {successful_sources} sources). Using AI analysis result (confidence capped at 0.75)."
+                    )
+
                 reason_parts.append(
                     f"AI Analysis: {llm_output.get('reason', 'No reasoning provided')}"
                 )
             else:
                 # No LLM result available
+                label = "unknown"
+                reason_parts.append(
+                    f"Insufficient evidence: {artificial_votes} AI vs {human_votes} human "
+                    f"from {total_voters} total sources"
+                )
+                reason_parts.append(f"Threshold: {self.min_source_agreement} required")
                 reason_parts.append(
                     f"Inconclusive: {artificial_votes} artificial, {human_votes} human "
                     f"out of {successful_sources} successful sources. "
@@ -383,6 +510,84 @@ class ArtistClassifier:
 
         except Exception as e:
             logger.error(f"Failed to store decision: {e}")
+
+    async def _collect_spotify_metadata(
+        self, artist_id: str, artist_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Collect Spotify metadata for artist to help detect ghost artists.
+
+        Args:
+            artist_id: Spotify artist ID
+            artist_name: Artist name
+
+        Returns:
+            Dict with metadata or None
+        """
+        try:
+            # Get artist details
+            artist = self.spotify_client.get_artist(artist_id)
+            if not artist:
+                return None
+
+            # Get artist albums to analyze release patterns
+            albums = (
+                self.spotify_client.sp.artist_albums(
+                    artist_id, album_type="album,single", limit=50
+                )
+                if self.spotify_client.sp
+                else None
+            )
+
+            # Analyze release pattern
+            release_pattern = {}
+            if albums and albums.get("items"):
+                from collections import defaultdict
+                from datetime import datetime
+
+                years = defaultdict(int)
+                total_releases = len(albums["items"])
+
+                for album in albums["items"]:
+                    release_date = album.get("release_date", "")
+                    if release_date:
+                        year = release_date.split("-")[0]
+                        if year.isdigit():
+                            years[year] += 1
+
+                # Calculate recent activity
+                current_year = datetime.now().year
+                recent_years = [
+                    str(y) for y in range(current_year - 2, current_year + 1)
+                ]
+                recent_releases = sum(years.get(year, 0) for year in recent_years)
+
+                release_pattern = {
+                    "total_releases": total_releases,
+                    "recent_releases_last_3_years": recent_releases,
+                    "releases_by_year": dict(sorted(years.items(), reverse=True)[:5]),
+                    "avg_per_recent_year": round(recent_releases / 3, 1)
+                    if recent_releases
+                    else 0,
+                }
+
+            # Get related artists to check for ghost artist networks
+            related = self.spotify_client.get_artist_related(artist_id, limit=10)
+            related_names = [a.get("name") for a in (related or [])[:5]]
+
+            metadata = {
+                "followers": artist.get("followers", {}).get("total", 0),
+                "popularity": artist.get("popularity", 0),
+                "genres": artist.get("genres", []),
+                "albums_count": release_pattern.get("total_releases", 0),
+                "release_pattern": release_pattern,
+                "related_artists": related_names,
+            }
+
+            return metadata
+
+        except Exception as e:
+            logger.error(f"Failed to collect Spotify metadata for {artist_name}: {e}")
+            return None
 
     def _decision_from_db(self, db_record: Dict[str, Any]) -> Dict[str, Any]:
         """Convert database record to decision dict.
